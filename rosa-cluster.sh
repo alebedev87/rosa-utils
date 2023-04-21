@@ -34,6 +34,7 @@ CLUSTER_NAME="${PREFIX}-test"
 ACTION="create"
 # --env is hidden option to force the creation on prod
 ENV_OPT="--env=staging"
+CLUSTER_WAIT_TIMEOUT="10s"
 
 while [ $# -gt 0 ]; do
   case ${1} in
@@ -76,25 +77,27 @@ if [ "${ACTION}" == "create" ]; then
 fi
 
 if [ "${ACTION}" == "delete" ]; then
+    echo "=> deleting cluster"
     DELETE_CLUSTER_FILE=$(mktemp)
     # Note that if you created a cluster with custom account roles and those roles got wiped out
     # you will have to recreate them before the cluster deletion.
     rosa delete cluster -c "${CLUSTER_NAME}" -y | tee "${DELETE_CLUSTER_FILE}"
 
+    echo "=> waiting for cluster to be deleted"
     while true; do
         STATE="$(rosa describe cluster -c ${CLUSTER_NAME} --output=json | jq -r .state)"
         if [ "${STATE}" == "uninstalling" ]; then
-            echo "cluster is uninstalling"
-            sleep 10s
+            echo "=> cluster is uninstalling"
+            sleep "${CLUSTER_WAIT_TIMEOUT}"
         else
-            echo "cluster is deleted"
+            echo "=> cluster is deleted"
             break
         fi
     done
 
+    echo "=> deleting operator roles and oidc provider"
     OPERATOR_ROLE_ID=$(\grep 'rosa delete operator-roles' "${DELETE_CLUSTER_FILE}" | xargs)
     OIDC_PROVIDER_ID=$(\grep 'rosa delete oidc-provider' "${DELETE_CLUSTER_FILE}" | xargs)
-
     # Once the cluster is uninstalled, run these commands to clean up the roles and IDP
     rosa delete operator-roles -c "${OPERATOR_ROLE_ID}" -y -m auto
     rosa delete oidc-provider -c "${OIDC_PROVIDER_ID}" -y -m auto
@@ -102,15 +105,17 @@ fi
 
 [ "${ACTION}" != "create" ] && exit 0
 
+echo "=> logging to rosa"
 rosa login ${ENV_OPT} --token="${ROSA_TOKEN}"
+echo "=> initializing rosa client"
 rosa init
 
+echo "=> creating custom account roles"
 # You may need to create the account roles (controlplane, worker, installer, etc.) in your AWS account.
 # These roles can be shared between users, but be aware that they may be updated by another user to use the trusted entity from prod or staging which may be different from your choice.
 # Then creation of the personally prefixed ones may be your choice:
 ACCOUNT_ROLES_FILE=$(mktemp)
 rosa create account-roles --prefix="${PREFIX}" --mode auto -y | tee "${ACCOUNT_ROLES_FILE}"
-
 CONTROL_PLANE_ROLE_ARN=$(\grep 'Created role' "${ACCOUNT_ROLES_FILE}" | \grep -oP 'arn:aws:iam:.*' | \grep 'ControlPlane-Role' | tr -d \')
 WORKER_ROLE_ARN=$(\grep 'Created role' "${ACCOUNT_ROLES_FILE}" | \grep -oP 'arn:aws:iam:.*' | \grep 'Worker-Role' | tr -d \')
 
@@ -118,36 +123,39 @@ WORKER_ROLE_ARN=$(\grep 'Created role' "${ACCOUNT_ROLES_FILE}" | \grep -oP 'arn:
 # auto mode is opposite to manual mode which only prints the delete commands
 #rosa create cluster --cluster-name=${CLUSTER_NAME} --sts --multi-az -m auto -y
 
-# You may want to specify the account roles explicitly if they are generated with a personal prefix.
-# Didn't find the option for the installer role but the client will ask you which one you would like interactively.
+echo "=> creating cluster"
+# You may want to specify the account roles explicitly if they are generated with a custom prefix.
+# No flag exists for the installer role, the client will ask you which one you would like to use interactively.
 rosa create cluster --cluster-name="${CLUSTER_NAME}" --sts --multi-az --controlplane-iam-role="${CONTROL_PLANE_ROLE_ARN}" --worker-iam-role="${WORKER_ROLE_ARN}"
 
-# you can create the operator roles and OIDC provider manually if `rosa create cluster` wasnt' in auto mode:
+echo "=> creating operator roles and oidc provider"
+# You can create the operator roles and OIDC provider manually if `rosa create cluster` wasnt' in auto mode:
 rosa create operator-roles --cluster="${CLUSTER_NAME}" -y -m auto
 rosa create oidc-provider --cluster="${CLUSTER_NAME}" -y -m auto
 # Don't forget to notice the OIDC provider ARN!
 # You may need it to generate credentials for add on operators suing ccoctl.
 # Example: arn:aws:iam::<awsaccount>:oidc-provider/d3gt1gce2zmg3d.cloudfront.net/225om899gi7c9bng49rtt1qli5hkkchq
 
+echo "=> waiting for cluster to be become ready"
 while true; do
     STATE="$(rosa describe cluster -c ${CLUSTER_NAME} --output=json | jq -r .state)"
     if [ "${STATE}" != "ready" ]; then
-        echo "cluster not ready: ${STATE}"
-        sleep 10s
+        echo "=> cluster is not ready: ${STATE}"
+        sleep "${CLUSTER_WAIT_TIMEOUT}"
     else
-        echo "cluster is ready"
+        echo "=> cluster is ready"
         break
     fi
 done
 
+echo "=> creating identity provider"
 # Once the cluster is ready add Identity Provider (IDP) to it.
 # Do not confuse it with the OIDC provider created in your AWS account before.
 # This IDP will be used inside your OpenShift cluster to authenticate OpenShift users.
 rosa create idp --cluster="${CLUSTER_NAME}" --type=htpasswd --username="${USERNAME}" --password="${PASSWORD}"
-
 rosa grant user dedicated-admin --cluster="${CLUSTER_NAME}" --user="${USERNAME}"
 rosa grant user cluster-admin --cluster="${CLUSTER_NAME}" --user="${USERNAME}"
 
-# Now you can login to the console and get the login token
-echo "Login to the console: $(rosa describe cluster -c ${CLUSTER_NAME} --output=json | jq -r .console.url)"
-echo "Login to the api: oc login -u ${USERNAME} -p ${PASSWORD} $(rosa describe cluster -c ${CLUSTER_NAME} --output=json | jq -r .api.url)"
+# Now you can login to the console and get the login token.
+echo "=> login to the console: $(rosa describe cluster -c ${CLUSTER_NAME} --output=json | jq -r .console.url)"
+echo "=> login to the api: oc login -u ${USERNAME} -p ${PASSWORD} $(rosa describe cluster -c ${CLUSTER_NAME} --output=json | jq -r .api.url)"
