@@ -58,7 +58,6 @@ while [ $# -gt 0 ]; do
           ;;
       --production)
           ENV_OPT=""
-          shift
           ;;
       *)
           usage
@@ -78,10 +77,9 @@ fi
 
 if [ "${ACTION}" == "delete" ]; then
     DELETE_CLUSTER_FILE=$(mktemp)
-    # Once you are done, you can run the following command
-    # Note that if you created a cluster with custom roles and the roles got wiped out (e.g. openshift-dev account can do it).
-    # You will have to recreate those roles.
-    rosa delete cluster -c ${CLUSTER_NAME} -y | tee "${DELETE_CLUSTER_FILE}"
+    # Note that if you created a cluster with custom account roles and those roles got wiped out
+    # you will have to recreate them before the cluster deletion.
+    rosa delete cluster -c "${CLUSTER_NAME}" -y | tee "${DELETE_CLUSTER_FILE}"
 
     while true; do
         STATE="$(rosa describe cluster -c ${CLUSTER_NAME} --output=json | jq -r .state)"
@@ -122,12 +120,13 @@ WORKER_ROLE_ARN=$(\grep 'Created role' "${ACCOUNT_ROLES_FILE}" | \grep -oP 'arn:
 
 # You may want to specify the account roles explicitly if they are generated with a personal prefix.
 # Didn't find the option for the installer role but the client will ask you which one you would like interactively.
-rosa create cluster --cluster-name=${CLUSTER_NAME} --sts --multi-az --controlplane-iam-role="${CONTROL_PLANE_ROLE_ARN}" --worker-iam-role="${WORKER_ROLE_ARN}"
+rosa create cluster --cluster-name="${CLUSTER_NAME}" --sts --multi-az --controlplane-iam-role="${CONTROL_PLANE_ROLE_ARN}" --worker-iam-role="${WORKER_ROLE_ARN}"
 
 # you can create the operator roles and OIDC provider manually if `rosa create cluster` wasnt' in auto mode:
-rosa create operator-roles --cluster=${CLUSTER_NAME} -y -m auto
-rosa create oidc-provider --cluster=${CLUSTER_NAME} -y -m auto
+rosa create operator-roles --cluster="${CLUSTER_NAME}" -y -m auto
+rosa create oidc-provider --cluster="${CLUSTER_NAME}" -y -m auto
 # Don't forget to notice the OIDC provider ARN!
+# You may need it to generate credentials for add on operators suing ccoctl.
 # Example: arn:aws:iam::<awsaccount>:oidc-provider/d3gt1gce2zmg3d.cloudfront.net/225om899gi7c9bng49rtt1qli5hkkchq
 
 while true; do
@@ -144,10 +143,10 @@ done
 # Once the cluster is ready add Identity Provider (IDP) to it.
 # Do not confuse it with the OIDC provider created in your AWS account before.
 # This IDP will be used inside your OpenShift cluster to authenticate OpenShift users.
-rosa create idp --cluster=${CLUSTER_NAME} --type=htpasswd --username="${USERNAME}" --password="${PASSWORD}"
+rosa create idp --cluster="${CLUSTER_NAME}" --type=htpasswd --username="${USERNAME}" --password="${PASSWORD}"
 
-rosa grant user dedicated-admin --cluster=${CLUSTER_NAME} --user=${USERNAME}
-rosa grant user cluster-admin --cluster=${CLUSTER_NAME} --user=${USERNAME}
+rosa grant user dedicated-admin --cluster="${CLUSTER_NAME}" --user="${USERNAME}"
+rosa grant user cluster-admin --cluster="${CLUSTER_NAME}" --user="${USERNAME}"
 
 # Now you can login to the console and get the login token
 echo "Login to the console: $(rosa describe cluster -c ${CLUSTER_NAME} --output=json | jq -r .console.url)"
