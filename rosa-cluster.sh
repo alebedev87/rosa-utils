@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
 
-set -e
 set -u
 
 # NOTE: this script will use your current AWS profile!
@@ -56,7 +55,6 @@ while [ $# -gt 0 ]; do
           ;;
       --delete)
           ACTION="delete"
-          shift
           ;;
       --production)
           ENV_OPT=""
@@ -95,8 +93,8 @@ if [ "${ACTION}" == "delete" ]; then
         fi
     done
 
-    OPERATOR_ROLE_ID=$(\grep 'Created role' "${DELETE_CLUSTER_FILE}")
-    OIDC_PROVIDER_ID=$(\grep 'Created role' "${DELETE_CLUSTER_FILE}")
+    OPERATOR_ROLE_ID=$(\grep 'rosa delete operator-roles' "${DELETE_CLUSTER_FILE}" | xargs)
+    OIDC_PROVIDER_ID=$(\grep 'rosa delete oidc-provider' "${DELETE_CLUSTER_FILE}" | xargs)
 
     # Once the cluster is uninstalled, run these commands to clean up the roles and IDP
     rosa delete operator-roles -c "${OPERATOR_ROLE_ID}" -y -m auto
@@ -146,7 +144,6 @@ done
 # Do not confuse it with the OIDC provider created in your AWS account before.
 # This IDP will be used inside your OpenShift cluster to authenticate OpenShift users.
 rosa create idp --cluster=${CLUSTER_NAME} --type=htpasswd --username="${USERNAME}" --password="${PASSWORD}"
-
 
 rosa grant user dedicated-admin --cluster=${CLUSTER_NAME} --user=${USERNAME}
 rosa grant user cluster-admin --cluster=${CLUSTER_NAME} --user=${USERNAME}
