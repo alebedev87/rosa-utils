@@ -15,7 +15,7 @@ usage() {
     cat <<EOF
 Create or delete a ROSA cluster.
 Usage: ${0} [OPTIONS]
-    --cluster-name      Cluster name, cannot not be longer than 15 characters.
+    --cluster-name      Cluster name (<= 15 characters).
     --rosa-token        ROSA token.
     --username          Cluster admin username.
     --password          Cluster admin password.
@@ -70,6 +70,7 @@ done
 [ -z "${CLUSTER_NAME}" ] && { echo "ERROR: no cluster name provided"; exit 1; }
 [ ! -x "$(command -v rosa)" ] && { echo "ERROR: rosa client not found"; exit 1; }
 if [ "${ACTION}" == "create" ]; then
+    [ ${#CLUSTER_NAME} -gt 15 ] && { echo "ERROR: cluster name must not be greater than 15 characters."; exit 1; }
     [ -z "${ROSA_TOKEN}" ] && { echo "ERROR: no ROSA token provided"; exit 1; }
     [ -z "${PASSWORD}" ] && { echo "ERROR: no cluster admin password provided"; exit 1; }
     [ -z "${USERNAME}" ] && { echo "ERROR: no cluster admin username provided"; exit 1; }
