@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-set -u
+set -ue
 
 # NOTE: this script will use your current AWS profile!
 # ROSA creates the cluster on your current AWS profile, change it if you want to use different from the default one.
@@ -21,6 +21,7 @@ Usage: ${0} [OPTIONS]
     --password          Cluster admin password.
     --delete            Delete ROSA cluster.
     --production        Use ROSA production.
+    --tags              Add additional resource tags (tag1:val1,tag2:val2).
 EOF
     exit 1
 }
@@ -28,6 +29,7 @@ EOF
 # To get the token: https://console.redhat.com/openshift/token/rosa/show
 ROSA_TOKEN=$(cat ${HOME}/.rosa-token)
 USERNAME="${USER}"
+PASSWORD=""
 PREFIX="${USERNAME:0:6}$(date +%m%d)"
 # not more than 15 chars
 CLUSTER_NAME="${PREFIX}-test"
@@ -35,6 +37,7 @@ ACTION="create"
 # --env is hidden option to force the creation on prod
 ENV_OPT="--env=staging"
 CLUSTER_WAIT_TIMEOUT="10s"
+CUSTOM_TAGS_OPT=""
 
 while [ $# -gt 0 ]; do
   case ${1} in
@@ -60,6 +63,10 @@ while [ $# -gt 0 ]; do
       --production)
           ENV_OPT=""
           ;;
+      --tags)
+          CUSTOM_TAGS_OPT="--tags=$2"
+          shift
+          ;;
       *)
           usage
           ;;
@@ -67,8 +74,8 @@ while [ $# -gt 0 ]; do
   shift
 done
 
-[ -z "${CLUSTER_NAME}" ] && { echo "ERROR: no cluster name provided"; exit 1; }
 [ ! -x "$(command -v rosa)" ] && { echo "ERROR: rosa client not found"; exit 1; }
+[ -z "${CLUSTER_NAME}" ] && { echo "ERROR: no cluster name provided"; exit 1; }
 if [ "${ACTION}" == "create" ]; then
     [ ${#CLUSTER_NAME} -gt 15 ] && { echo "ERROR: cluster name must not be greater than 15 characters."; exit 1; }
     [ -z "${ROSA_TOKEN}" ] && { echo "ERROR: no ROSA token provided"; exit 1; }
@@ -126,7 +133,7 @@ WORKER_ROLE_ARN=$(\grep 'Created role' "${ACCOUNT_ROLES_FILE}" | \grep -oP 'arn:
 echo "=> creating cluster"
 # You may want to specify the account roles explicitly if they are generated with a custom prefix.
 # No flag exists for the installer role, the client will ask you which one you would like to use interactively.
-rosa create cluster --cluster-name="${CLUSTER_NAME}" --sts --multi-az --controlplane-iam-role="${CONTROL_PLANE_ROLE_ARN}" --worker-iam-role="${WORKER_ROLE_ARN}"
+rosa create cluster --cluster-name="${CLUSTER_NAME}" --sts --multi-az --controlplane-iam-role="${CONTROL_PLANE_ROLE_ARN}" --worker-iam-role="${WORKER_ROLE_ARN}" "${CUSTOM_TAGS_OPT}"
 
 echo "=> creating operator roles and oidc provider"
 # You can create the operator roles and OIDC provider manually if `rosa create cluster` wasnt' in auto mode:
