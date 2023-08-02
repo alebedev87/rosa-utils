@@ -15,13 +15,13 @@ usage() {
     cat <<EOF
 Create or delete a ROSA cluster.
 Usage: ${0} [OPTIONS]
-    --cluster-name      Cluster name (<= 15 characters).
-    --rosa-token        ROSA token.
-    --username          Cluster admin username.
-    --password          Cluster admin password.
-    --delete            Delete ROSA cluster.
-    --production        Use ROSA production.
-    --tags              Add additional resource tags (tag1:val1,tag2:val2).
+    --cluster-name      Cluster name (<= 15 characters) [defaults to \${USERNAME}\$(date)-test].
+    --rosa-token        ROSA token [defaults to \${HOME}/.rosa-token].
+    --username          Cluster admin username [defaults to \${USER}].
+    --password          Cluster admin password [required].
+    --delete            Delete ROSA cluster [optional].
+    --production        Use ROSA production [optional].
+    --tags              Add additional resource tags (tag1:val1,tag2:val2) [optional].
 EOF
     exit 1
 }
@@ -75,12 +75,12 @@ while [ $# -gt 0 ]; do
 done
 
 [ ! -x "$(command -v rosa)" ] && { echo "ERROR: rosa client not found"; exit 1; }
-[ -z "${CLUSTER_NAME}" ] && { echo "ERROR: no cluster name provided"; exit 1; }
+[ -z "${CLUSTER_NAME}" ] && { echo "ERROR: no cluster name provided"; usage; exit 1; }
 if [ "${ACTION}" == "create" ]; then
-    [ ${#CLUSTER_NAME} -gt 15 ] && { echo "ERROR: cluster name must not be greater than 15 characters."; exit 1; }
-    [ -z "${ROSA_TOKEN}" ] && { echo "ERROR: no ROSA token provided"; exit 1; }
-    [ -z "${PASSWORD}" ] && { echo "ERROR: no cluster admin password provided"; exit 1; }
-    [ -z "${USERNAME}" ] && { echo "ERROR: no cluster admin username provided"; exit 1; }
+    [ ${#CLUSTER_NAME} -gt 15 ] && { echo "ERROR: cluster name must not be greater than 15 characters."; usage; exit 1; }
+    [ -z "${ROSA_TOKEN}" ] && { echo "ERROR: no ROSA token provided"; usage; exit 1; }
+    [ -z "${PASSWORD}" ] && { echo "ERROR: no cluster admin password provided"; usage; exit 1; }
+    [ -z "${USERNAME}" ] && { echo "ERROR: no cluster admin username provided"; usage; exit 1; }
 fi
 
 if [ "${ACTION}" == "delete" ]; then
