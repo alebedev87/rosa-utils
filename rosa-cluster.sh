@@ -124,7 +124,7 @@ echo "=> creating custom account roles"
 ACCOUNT_ROLES_FILE=$(mktemp)
 rosa create account-roles --prefix="${PREFIX}" --mode auto -y | tee "${ACCOUNT_ROLES_FILE}"
 CONTROL_PLANE_ROLE_ARN=$(\grep 'Created role' "${ACCOUNT_ROLES_FILE}" | \grep -oP 'arn:aws:iam:.*' | \grep 'ControlPlane-Role' | tr -d \')
-WORKER_ROLE_ARN=$(\grep 'Created role' "${ACCOUNT_ROLES_FILE}" | \grep -oP 'arn:aws:iam:.*' | \grep 'Worker-Role' | tr -d \')
+WORKER_ROLE_ARN=$(\grep 'Created role' "${ACCOUNT_ROLES_FILE}" | \grep -oP 'arn:aws:iam:.*' | \grep 'Worker-Role' | \grep -v 'HCP-ROSA' | tr -d \')
 
 # --mode auto: will create the operator roles and oidc provider too
 # auto mode is opposite to manual mode which only prints the delete commands
