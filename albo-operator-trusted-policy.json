@@ -1,0 +1,17 @@
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Effect": "Allow",
+            "Principal": {
+                "Federated": "arn:aws:iam::999999999999:oidc-provider/d3gt1gce2zmg3d.cloudfront.net/25bslnj8bdll0fqhb9h5u0rmbpb3esgm"
+            },
+            "Action": "sts:AssumeRoleWithWebIdentity",
+            "Condition": {
+                "StringEquals": {
+                    "d3gt1gce2zmg3d.cloudfront.net/25bslnj8bdll0fqhb9h5u0rmbpb3esgm:sub": "system:serviceaccount:aws-load-balancer-operator:aws-load-balancer-operator-controller-manager"
+                }
+            }
+        }
+    ]
+}

@@ -1,0 +1,7 @@
+aws iam create-role --role-name albo-controller --assume-role-policy-document file://albo-controller-trusted-policy.json
+
+ROLE	arn:aws:iam::999999999999:role/albo-controller	2023-08-02T12:13:22Z
+ASSUMEROLEPOLICYDOCUMENT	2012-10-17
+STATEMENT	sts:AssumeRoleWithWebIdentity	Allow
+STRINGEQUALS	system:serviceaccount:aws-load-balancer-operator:aws-load-balancer-controller-cluster
+PRINCIPAL	arn:aws:iam:999999999999:oidc-provider/d3gt1gce2zmg3d.cloudfront.net/25bslnj8bdll0fqhb9h5u0rmbpb3esgm
