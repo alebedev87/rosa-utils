@@ -130,10 +130,10 @@ WORKER_ROLE_ARN=$(\grep 'Created role' "${ACCOUNT_ROLES_FILE}" | \grep -oP 'arn:
 # auto mode is opposite to manual mode which only prints the delete commands
 #rosa create cluster --cluster-name=${CLUSTER_NAME} --sts --multi-az -m auto -y
 
-echo "=> creating cluster"
+echo "=> creating cluster ${CLUSTER_NAME}"
 # You may want to specify the account roles explicitly if they are generated with a custom prefix.
 # No flag exists for the installer role, the client will ask you which one you would like to use interactively.
-rosa create cluster --cluster-name="${CLUSTER_NAME}" --sts --multi-az --controlplane-iam-role="${CONTROL_PLANE_ROLE_ARN}" --worker-iam-role="${WORKER_ROLE_ARN}" "${CUSTOM_TAGS_OPT}"
+rosa create cluster --cluster-name="${CLUSTER_NAME}" --sts --multi-az --controlplane-iam-role="${CONTROL_PLANE_ROLE_ARN}" --worker-iam-role="${WORKER_ROLE_ARN}" ${CUSTOM_TAGS_OPT}
 
 echo "=> creating operator roles and oidc provider"
 # You can create the operator roles and OIDC provider manually if `rosa create cluster` wasnt' in auto mode:
