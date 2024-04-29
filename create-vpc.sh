@@ -5,6 +5,7 @@ set -e
 TERRAFORM_URL="https://github.com/openshift-cs/terraform-vpc-example"
 TERRAFORM_DIR="terraform-vpc-example"
 TERRAFORM_PLAN="rosa.tfplan"
+# Region 'us-east-2' not currently available for Hosted Control Plane cluster.
 REGION="us-west-2"
 
 if [ -d "${TERRAFORM_DIR}" ]; then

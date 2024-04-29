@@ -24,6 +24,7 @@ Usage: ${0} [OPTIONS]
     --tags              Add additional resource tags (tag1:val1,tag2:val2) [optional].
     --hcp               Create ROSA Hosted Control Plane cluster [optional].
     --billing           Billing account [optional].
+    --subnets           Subnet IDs [optional].
 EOF
     exit 1
 }
@@ -42,6 +43,11 @@ CLUSTER_WAIT_TIMEOUT="10s"
 CUSTOM_TAGS_OPT=""
 HOSTED_CP_OPT=""
 BILLING_ACCOUNT=""
+SUBNET_IDS=""
+# Region 'us-east-2' not currently available for Hosted Control Plane cluster.
+REGION="us-west-2"
+NUMBER_COMPUTE_NODES="3"
+HCP_CLUSTER_OPTS="--compute-machine-type=m5.xlarge --machine-cidr 10.0.0.0/16 --service-cidr 172.30.0.0/16 --pod-cidr 10.128.0.0/14 --host-prefix 23"
 
 while [ $# -gt 0 ]; do
   case ${1} in
@@ -73,10 +79,13 @@ while [ $# -gt 0 ]; do
           ;;
       --hcp)
           HOSTED_CP_OPT="--hosted-cp"
-          shift
           ;;
       --billing)
           BILLING_ACCOUNT="$2"
+          shift
+          ;;
+      --subnets)
+          SUBNET_IDS="$2"
           shift
           ;;
       *)
@@ -94,6 +103,7 @@ if [ "${ACTION}" == "create" ]; then
     [ -z "${PASSWORD}" ] && { echo "ERROR: no cluster admin password provided"; usage; exit 1; }
     [ -z "${USERNAME}" ] && { echo "ERROR: no cluster admin username provided"; usage; exit 1; }
     [ -n "${HOSTED_CP_OPT}" -a -z "${BILLING_ACCOUNT}" ] && { echo "ERROR: no billing account provided"; usage; exit 1; }
+    [ -n "${HOSTED_CP_OPT}" -a -z "${SUBNET_IDS}" ] && { echo "ERROR: no subnets ids provided"; usage; exit 1; }
 fi
 
 if [ "${ACTION}" == "delete" ]; then
@@ -124,8 +134,18 @@ if [ "${ACTION}" == "delete" ]; then
         rosa delete oidc-provider -c "${OIDC_PROVIDER_ID}" -y -m auto
     fi
 
-    echo "=> deleting account roles for ${PREFIX} prefix"
-    rosa delete account-roles --prefix="${PREFIX}" -y -m auto ${HOSTED_CP_OPT}
+    PREFIX_USED=${CLUSTER_NAME%%-*}
+
+    echo "=> deleting account roles for ${PREFIX_USED} prefix"
+    rosa delete account-roles --prefix="${PREFIX_USED}" -y -m auto ${HOSTED_CP_OPT}
+
+    if [ -n "${HOSTED_CP_OPT}" ]; then
+        echo "=> deleting oidc config"
+        echo "rosa delete oidc-config -y -m auto --oidc-config-id="
+
+        echo "=> deleting operator roles"
+        rosa delete operator-roles --prefix=${PREFIX_USED} -y -m auto
+    fi
 fi
 
 [ "${ACTION}" != "create" ] && exit 0
@@ -141,29 +161,43 @@ echo "=> creating custom account roles"
 # Then creation of the personally prefixed ones may be your choice:
 ACCOUNT_ROLES_FILE=$(mktemp)
 rosa create account-roles --prefix="${PREFIX}" --mode auto -y ${HOSTED_CP_OPT} | tee "${ACCOUNT_ROLES_FILE}"
-CONTROL_PLANE_ROLE_ARN=$(\grep 'Created role' "${ACCOUNT_ROLES_FILE}" | \grep -oP 'arn:aws:iam:.*' | \grep 'ControlPlane-Role' | tr -d \')
-WORKER_ROLE_ARN=$(\grep 'Created role' "${ACCOUNT_ROLES_FILE}" | \grep -oP 'arn:aws:iam:.*' | \grep 'Worker-Role' | \grep -v 'HCP-ROSA' | tr -d \')
 
 # --mode auto: will create the operator roles and oidc provider too
 # auto mode is opposite to manual mode which only prints the delete commands
 #rosa create cluster --cluster-name=${CLUSTER_NAME} --sts --multi-az -m auto -y
 
-echo "=> creating cluster ${CLUSTER_NAME}"
 # You may want to specify the account roles explicitly if they are generated with a custom prefix.
 # No flag exists for the installer role, the client will ask you which one you would like to use interactively.
 if [ -z "${HOSTED_CP_OPT}" ]; then
+    echo "=> creating cluster ${CLUSTER_NAME}"
+    CONTROL_PLANE_ROLE_ARN=$(\grep 'Created role' "${ACCOUNT_ROLES_FILE}" | \grep -oP 'arn:aws:iam:.*' | \grep 'ControlPlane-Role' | tr -d \')
+    WORKER_ROLE_ARN=$(\grep 'Created role' "${ACCOUNT_ROLES_FILE}" | \grep -oP 'arn:aws:iam:.*' | \grep 'Worker-Role' | \grep -v 'HCP-ROSA' | tr -d \')
     rosa create cluster --cluster-name="${CLUSTER_NAME}" --sts --multi-az --controlplane-iam-role="${CONTROL_PLANE_ROLE_ARN}" --worker-iam-role="${WORKER_ROLE_ARN}" ${CUSTOM_TAGS_OPT}
-else
-    rosa create cluster --cluster-name="${CLUSTER_NAME}" --sts --multi-az --billing-account="${BILLING_ACCOUNT}" ${HOSTED_CP_OPT} ${CUSTOM_TAGS_OPT}
-fi
 
-echo "=> creating operator roles and oidc provider"
-# You can create the operator roles and OIDC provider manually if `rosa create cluster` wasnt' in auto mode:
-rosa create operator-roles --cluster="${CLUSTER_NAME}" -y -m auto
-rosa create oidc-provider --cluster="${CLUSTER_NAME}" -y -m auto
-# Don't forget to notice the OIDC provider ARN!
-# You may need it to generate credentials for add on operators suing ccoctl.
-# Example: arn:aws:iam::<awsaccount>:oidc-provider/d3gt1gce2zmg3d.cloudfront.net/225om899gi7c9bng49rtt1qli5hkkchq
+    echo "=> creating operator roles and oidc provider"
+    # You can create the operator roles and OIDC provider manually if `rosa create cluster` wasnt' in auto mode:
+    rosa create operator-roles --cluster="${CLUSTER_NAME}" -y -m auto
+    rosa create oidc-provider --cluster="${CLUSTER_NAME}" -y -m auto
+    # Don't forget to notice the OIDC provider ARN!
+    # You may need it to generate credentials for add on operators using ccoctl.
+    # Example: arn:aws:iam::<awsaccount>:oidc-provider/d3gt1gce2zmg3d.cloudfront.net/225om899gi7c9bng49rtt1qli5hkkchq
+else
+    INSTALLER_HCP_ROLE_ARN=$(\grep 'Created role' "${ACCOUNT_ROLES_FILE}" | \grep -oP 'arn:aws:iam:.*' | \grep 'HCP-ROSA-Installer-Role' | tr -d \')
+    SUPPORT_HCP_ROLE_ARN=$(\grep 'Created role' "${ACCOUNT_ROLES_FILE}" | \grep -oP 'arn:aws:iam:.*' | \grep 'HCP-ROSA-Support-Role' | tr -d \')
+    WORKER_HCP_ROLE_ARN=$(\grep 'Created role' "${ACCOUNT_ROLES_FILE}" | \grep -oP 'arn:aws:iam:.*' | \grep 'HCP-ROSA-Worker-Role' | tr -d \')
+
+    echo "=> creating oidc config and operator roles"
+    OIDC_CONFIG_FILE=$(mktemp)
+    rosa create oidc-config -y -m auto | tee "${OIDC_CONFIG_FILE}"
+    OIDC_ARN=$(\grep 'Created OIDC provider with ARN' "${OIDC_CONFIG_FILE}" | \grep -oP 'arn:aws:iam:.*' | tr -d \')
+    OIDC_ID=${OIDC_ARN##*/}
+    rosa create operator-roles ${HOSTED_CP_OPT} --prefix="${PREFIX}" --oidc-config-id="${OIDC_ID}" --installer-role-arn="${INSTALLER_HCP_ROLE_ARN}" -y -m auto
+    echo "=> creating cluster ${CLUSTER_NAME}"
+    set -x
+    rosa create cluster --cluster-name="${CLUSTER_NAME}" --sts -m auto --role-arn="${INSTALLER_HCP_ROLE_ARN}" --support-role-arn="${SUPPORT_HCP_ROLE_ARN}" --worker-iam-role-arn="${WORKER_HCP_ROLE_ARN}" --oidc-config-id=${OIDC_ID} --operator-roles-prefix=${PREFIX} --subnet-ids=${SUBNET_IDS} --region="${REGION}" --replicas="${NUMBER_COMPUTE_NODES}" ${HCP_CLUSTER_OPTS} ${HOSTED_CP_OPT} ${CUSTOM_TAGS_OPT}
+    # --billing-account="${BILLING_ACCOUNT}"
+    set +x
+fi
 
 echo "=> waiting for cluster to be become ready"
 while true; do
