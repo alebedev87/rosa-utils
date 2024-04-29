@@ -22,8 +22,8 @@ Usage: ${0} [OPTIONS]
     --delete            Delete ROSA cluster [optional].
     --production        Use ROSA production [optional].
     --tags              Add additional resource tags (tag1:val1,tag2:val2) [optional].
-    --classic           Create ROSA Classic cluster (no hosted control plane) [optional].
-    --billing           Billing account [required for HCP].
+    --hcp               Create ROSA Hosted Control Plane cluster [optional].
+    --billing           Billing account [optional].
 EOF
     exit 1
 }
@@ -40,7 +40,7 @@ ACTION="create"
 ENV_OPT="--env=staging"
 CLUSTER_WAIT_TIMEOUT="10s"
 CUSTOM_TAGS_OPT=""
-HOSTED_CP_OPT="--hosted-cp"
+HOSTED_CP_OPT=""
 BILLING_ACCOUNT=""
 
 while [ $# -gt 0 ]; do
@@ -71,8 +71,8 @@ while [ $# -gt 0 ]; do
           CUSTOM_TAGS_OPT="--tags=$2"
           shift
           ;;
-      --classic)
-          HOSTED_CP_OPT=""
+      --hcp)
+          HOSTED_CP_OPT="--hosted-cp"
           shift
           ;;
       --billing)
