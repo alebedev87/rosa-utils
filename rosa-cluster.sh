@@ -118,7 +118,7 @@ if [ "${ACTION}" == "delete" ]; then
     fi
 
     echo "=> deleting account roles for ${PREFIX} prefix"
-    rosa delete account-roles --prefix="${PREFIX}" -y -m auto
+    rosa delete account-roles --prefix="${PREFIX}" -y -m auto ${HOSTED_CP_OPT}
 fi
 
 [ "${ACTION}" != "create" ] && exit 0
@@ -144,7 +144,11 @@ WORKER_ROLE_ARN=$(\grep 'Created role' "${ACCOUNT_ROLES_FILE}" | \grep -oP 'arn:
 echo "=> creating cluster ${CLUSTER_NAME}"
 # You may want to specify the account roles explicitly if they are generated with a custom prefix.
 # No flag exists for the installer role, the client will ask you which one you would like to use interactively.
-rosa create cluster --cluster-name="${CLUSTER_NAME}" --sts --multi-az --controlplane-iam-role="${CONTROL_PLANE_ROLE_ARN}" --worker-iam-role="${WORKER_ROLE_ARN}" ${CUSTOM_TAGS_OPT} ${HOSTED_CP_OPT}
+if [ -z "${HOSTED_CP_OPT}" ]; then
+    rosa create cluster --cluster-name="${CLUSTER_NAME}" --sts --multi-az --controlplane-iam-role="${CONTROL_PLANE_ROLE_ARN}" --worker-iam-role="${WORKER_ROLE_ARN}" ${CUSTOM_TAGS_OPT}
+else
+    rosa create cluster --cluster-name="${CLUSTER_NAME}" --sts --multi-az ${HOSTED_CP_OPT} ${CUSTOM_TAGS_OPT}
+fi
 
 echo "=> creating operator roles and oidc provider"
 # You can create the operator roles and OIDC provider manually if `rosa create cluster` wasnt' in auto mode:
