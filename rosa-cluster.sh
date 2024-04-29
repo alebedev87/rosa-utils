@@ -46,7 +46,7 @@ BILLING_ACCOUNT=""
 SUBNET_IDS=""
 # Region 'us-east-2' not currently available for Hosted Control Plane cluster.
 REGION="us-west-2"
-NUMBER_COMPUTE_NODES="3"
+NUMBER_COMPUTE_NODES="4"
 HCP_CLUSTER_OPTS="--compute-machine-type=m5.xlarge --machine-cidr 10.0.0.0/16 --service-cidr 172.30.0.0/16 --pod-cidr 10.128.0.0/14 --host-prefix 23"
 
 while [ $# -gt 0 ]; do
@@ -127,25 +127,17 @@ if [ "${ACTION}" == "delete" ]; then
         done
 
         echo "=> deleting operator roles and oidc provider"
-        OPERATOR_ROLE_ID=$(\grep 'rosa delete operator-roles' "${DELETE_CLUSTER_FILE}" | xargs)
-        OIDC_PROVIDER_ID=$(\grep 'rosa delete oidc-provider' "${DELETE_CLUSTER_FILE}" | xargs)
-        # Once the cluster is uninstalled, run these commands to clean up the roles and IDP
-        rosa delete operator-roles -c "${OPERATOR_ROLE_ID}" -y -m auto
-        rosa delete oidc-provider -c "${OIDC_PROVIDER_ID}" -y -m auto
+        OPERATOR_ROLE_CMD=$(\grep 'rosa delete operator-roles' "${DELETE_CLUSTER_FILE}" | xargs)
+        OIDC_PROVIDER_CMD=$(\grep 'rosa delete oidc-provider' "${DELETE_CLUSTER_FILE}" | xargs)
+        set -x
+        ${OPERATOR_ROLE_CMD} -y -m auto
+        ${OIDC_PROVIDER_CMD} -y -m auto
+        set +x
     fi
 
     PREFIX_USED=${CLUSTER_NAME%%-*}
-
     echo "=> deleting account roles for ${PREFIX_USED} prefix"
     rosa delete account-roles --prefix="${PREFIX_USED}" -y -m auto ${HOSTED_CP_OPT}
-
-    if [ -n "${HOSTED_CP_OPT}" ]; then
-        echo "=> deleting oidc config"
-        echo "rosa delete oidc-config -y -m auto --oidc-config-id="
-
-        echo "=> deleting operator roles"
-        rosa delete operator-roles --prefix=${PREFIX_USED} -y -m auto
-    fi
 fi
 
 [ "${ACTION}" != "create" ] && exit 0
