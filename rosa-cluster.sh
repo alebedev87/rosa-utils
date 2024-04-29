@@ -22,6 +22,7 @@ Usage: ${0} [OPTIONS]
     --delete            Delete ROSA cluster [optional].
     --production        Use ROSA production [optional].
     --tags              Add additional resource tags (tag1:val1,tag2:val2) [optional].
+    --classic           Create ROSA Classic cluster (no hosted control plane) [optional].
 EOF
     exit 1
 }
@@ -38,6 +39,7 @@ ACTION="create"
 ENV_OPT="--env=staging"
 CLUSTER_WAIT_TIMEOUT="10s"
 CUSTOM_TAGS_OPT=""
+HOSTED_CP_OPT="--hosted-cp"
 
 while [ $# -gt 0 ]; do
   case ${1} in
@@ -67,6 +69,10 @@ while [ $# -gt 0 ]; do
           CUSTOM_TAGS_OPT="--tags=$2"
           shift
           ;;
+      --classic)
+          HOSTED_CP_OPT=""
+          shift
+          ;;
       *)
           usage
           ;;
@@ -84,30 +90,35 @@ if [ "${ACTION}" == "create" ]; then
 fi
 
 if [ "${ACTION}" == "delete" ]; then
-    echo "=> deleting cluster"
+    echo "=> deleting cluster ${CLUSTER_NAME}"
     DELETE_CLUSTER_FILE=$(mktemp)
     # Note that if you created a cluster with custom account roles and those roles got wiped out
     # you will have to recreate them before the cluster deletion.
     rosa delete cluster -c "${CLUSTER_NAME}" -y | tee "${DELETE_CLUSTER_FILE}"
 
-    echo "=> waiting for cluster to be deleted"
-    while true; do
-        STATE="$(rosa describe cluster -c ${CLUSTER_NAME} --output=json | jq -r .state)"
-        if [ "${STATE}" == "uninstalling" ]; then
-            echo "=> cluster is uninstalling"
-            sleep "${CLUSTER_WAIT_TIMEOUT}"
-        else
-            echo "=> cluster is deleted"
-            break
-        fi
-    done
+    if [ $(wc -l "${DELETE_CLUSTER_FILE}" | cut -d' ' -f1) -ne 0 ]; then
+        echo "=> waiting for cluster to be deleted"
+        while true; do
+            STATE="$(rosa describe cluster -c ${CLUSTER_NAME} --output=json | jq -r .state)"
+            if [ "${STATE}" == "uninstalling" ]; then
+                echo "=> cluster is uninstalling"
+                sleep "${CLUSTER_WAIT_TIMEOUT}"
+            else
+                echo "=> cluster is deleted"
+                break
+            fi
+        done
 
-    echo "=> deleting operator roles and oidc provider"
-    OPERATOR_ROLE_ID=$(\grep 'rosa delete operator-roles' "${DELETE_CLUSTER_FILE}" | xargs)
-    OIDC_PROVIDER_ID=$(\grep 'rosa delete oidc-provider' "${DELETE_CLUSTER_FILE}" | xargs)
-    # Once the cluster is uninstalled, run these commands to clean up the roles and IDP
-    rosa delete operator-roles -c "${OPERATOR_ROLE_ID}" -y -m auto
-    rosa delete oidc-provider -c "${OIDC_PROVIDER_ID}" -y -m auto
+        echo "=> deleting operator roles and oidc provider"
+        OPERATOR_ROLE_ID=$(\grep 'rosa delete operator-roles' "${DELETE_CLUSTER_FILE}" | xargs)
+        OIDC_PROVIDER_ID=$(\grep 'rosa delete oidc-provider' "${DELETE_CLUSTER_FILE}" | xargs)
+        # Once the cluster is uninstalled, run these commands to clean up the roles and IDP
+        rosa delete operator-roles -c "${OPERATOR_ROLE_ID}" -y -m auto
+        rosa delete oidc-provider -c "${OIDC_PROVIDER_ID}" -y -m auto
+    fi
+
+    echo "=> deleting account roles for ${PREFIX} prefix"
+    rosa delete account-roles --prefix="${PREFIX}" -y -m auto
 fi
 
 [ "${ACTION}" != "create" ] && exit 0
@@ -122,7 +133,7 @@ echo "=> creating custom account roles"
 # These roles can be shared between users, but be aware that they may be updated by another user to use the trusted entity from prod or staging which may be different from your choice.
 # Then creation of the personally prefixed ones may be your choice:
 ACCOUNT_ROLES_FILE=$(mktemp)
-rosa create account-roles --prefix="${PREFIX}" --mode auto -y | tee "${ACCOUNT_ROLES_FILE}"
+rosa create account-roles --prefix="${PREFIX}" --mode auto -y ${HOSTED_CP_OPT} | tee "${ACCOUNT_ROLES_FILE}"
 CONTROL_PLANE_ROLE_ARN=$(\grep 'Created role' "${ACCOUNT_ROLES_FILE}" | \grep -oP 'arn:aws:iam:.*' | \grep 'ControlPlane-Role' | tr -d \')
 WORKER_ROLE_ARN=$(\grep 'Created role' "${ACCOUNT_ROLES_FILE}" | \grep -oP 'arn:aws:iam:.*' | \grep 'Worker-Role' | \grep -v 'HCP-ROSA' | tr -d \')
 
@@ -133,7 +144,7 @@ WORKER_ROLE_ARN=$(\grep 'Created role' "${ACCOUNT_ROLES_FILE}" | \grep -oP 'arn:
 echo "=> creating cluster ${CLUSTER_NAME}"
 # You may want to specify the account roles explicitly if they are generated with a custom prefix.
 # No flag exists for the installer role, the client will ask you which one you would like to use interactively.
-rosa create cluster --cluster-name="${CLUSTER_NAME}" --sts --multi-az --controlplane-iam-role="${CONTROL_PLANE_ROLE_ARN}" --worker-iam-role="${WORKER_ROLE_ARN}" ${CUSTOM_TAGS_OPT}
+rosa create cluster --cluster-name="${CLUSTER_NAME}" --sts --multi-az --controlplane-iam-role="${CONTROL_PLANE_ROLE_ARN}" --worker-iam-role="${WORKER_ROLE_ARN}" ${CUSTOM_TAGS_OPT} ${HOSTED_CP_OPT}
 
 echo "=> creating operator roles and oidc provider"
 # You can create the operator roles and OIDC provider manually if `rosa create cluster` wasnt' in auto mode:
