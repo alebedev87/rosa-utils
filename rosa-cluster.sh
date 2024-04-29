@@ -23,6 +23,7 @@ Usage: ${0} [OPTIONS]
     --production        Use ROSA production [optional].
     --tags              Add additional resource tags (tag1:val1,tag2:val2) [optional].
     --classic           Create ROSA Classic cluster (no hosted control plane) [optional].
+    --billing           Billing account [required for HCP].
 EOF
     exit 1
 }
@@ -40,6 +41,7 @@ ENV_OPT="--env=staging"
 CLUSTER_WAIT_TIMEOUT="10s"
 CUSTOM_TAGS_OPT=""
 HOSTED_CP_OPT="--hosted-cp"
+BILLING_ACCOUNT=""
 
 while [ $# -gt 0 ]; do
   case ${1} in
@@ -73,6 +75,10 @@ while [ $# -gt 0 ]; do
           HOSTED_CP_OPT=""
           shift
           ;;
+      --billing)
+          BILLING_ACCOUNT="$2"
+          shift
+          ;;
       *)
           usage
           ;;
@@ -87,6 +93,7 @@ if [ "${ACTION}" == "create" ]; then
     [ -z "${ROSA_TOKEN}" ] && { echo "ERROR: no ROSA token provided"; usage; exit 1; }
     [ -z "${PASSWORD}" ] && { echo "ERROR: no cluster admin password provided"; usage; exit 1; }
     [ -z "${USERNAME}" ] && { echo "ERROR: no cluster admin username provided"; usage; exit 1; }
+    [ -n "${HOSTED_CP_OPT}" -a -z "${BILLING_ACCOUNT}" ] && { echo "ERROR: no billing account provided"; usage; exit 1; }
 fi
 
 if [ "${ACTION}" == "delete" ]; then
@@ -147,7 +154,7 @@ echo "=> creating cluster ${CLUSTER_NAME}"
 if [ -z "${HOSTED_CP_OPT}" ]; then
     rosa create cluster --cluster-name="${CLUSTER_NAME}" --sts --multi-az --controlplane-iam-role="${CONTROL_PLANE_ROLE_ARN}" --worker-iam-role="${WORKER_ROLE_ARN}" ${CUSTOM_TAGS_OPT}
 else
-    rosa create cluster --cluster-name="${CLUSTER_NAME}" --sts --multi-az ${HOSTED_CP_OPT} ${CUSTOM_TAGS_OPT}
+    rosa create cluster --cluster-name="${CLUSTER_NAME}" --sts --multi-az --billing-account="${BILLING_ACCOUNT}" ${HOSTED_CP_OPT} ${CUSTOM_TAGS_OPT}
 fi
 
 echo "=> creating operator roles and oidc provider"
