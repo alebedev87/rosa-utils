@@ -31,11 +31,11 @@ echo "=> terraform plan"
 [ -f "${TERRAFORM_PLAN}" -a "${1}" = "-c" ] && rm -f "${TERRAFORM_PLAN}"
 terraform plan ${DESTROY_OPT} -out "${TERRAFORM_PLAN}" -var region="${REGION}" -var subnet_azs="${SUBNETS}" -var single_az_only="false"
 
-read -p "=> press Enter to apply..."
+read -p "=> press any key to apply..."
 
 echo "=> terraform apply"
 terraform apply ${DESTROY_OPT} "${TERRAFORM_PLAN}"
 
-SUBNET_IDS=$(terraform output -raw cluster-subnets-string)
+#SUBNET_IDS=$(terraform output -raw cluster-subnets-string)
 
-echo "=> subnets: ${SUBNET_IDS}"
+#echo "=> subnets: ${SUBNET_IDS}"

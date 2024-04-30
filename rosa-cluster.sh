@@ -23,7 +23,6 @@ Usage: ${0} [OPTIONS]
     --production        Use ROSA production [optional].
     --tags              Add additional resource tags (tag1:val1,tag2:val2) [optional].
     --hcp               Create ROSA Hosted Control Plane cluster [optional].
-    --billing           Billing account [optional].
     --subnets           Subnet IDs [optional].
 EOF
     exit 1
@@ -80,10 +79,6 @@ while [ $# -gt 0 ]; do
       --hcp)
           HOSTED_CP_OPT="--hosted-cp"
           ;;
-      --billing)
-          BILLING_ACCOUNT="$2"
-          shift
-          ;;
       --subnets)
           SUBNET_IDS="$2"
           shift
@@ -102,7 +97,6 @@ if [ "${ACTION}" == "create" ]; then
     [ -z "${ROSA_TOKEN}" ] && { echo "ERROR: no ROSA token provided"; usage; exit 1; }
     [ -z "${PASSWORD}" ] && { echo "ERROR: no cluster admin password provided"; usage; exit 1; }
     [ -z "${USERNAME}" ] && { echo "ERROR: no cluster admin username provided"; usage; exit 1; }
-    [ -n "${HOSTED_CP_OPT}" -a -z "${BILLING_ACCOUNT}" ] && { echo "ERROR: no billing account provided"; usage; exit 1; }
     [ -n "${HOSTED_CP_OPT}" -a -z "${SUBNET_IDS}" ] && { echo "ERROR: no subnets ids provided"; usage; exit 1; }
 fi
 
@@ -187,7 +181,6 @@ else
     echo "=> creating cluster ${CLUSTER_NAME}"
     set -x
     rosa create cluster --cluster-name="${CLUSTER_NAME}" --sts -m auto --role-arn="${INSTALLER_HCP_ROLE_ARN}" --support-role-arn="${SUPPORT_HCP_ROLE_ARN}" --worker-iam-role-arn="${WORKER_HCP_ROLE_ARN}" --oidc-config-id=${OIDC_ID} --operator-roles-prefix=${PREFIX} --subnet-ids=${SUBNET_IDS} --region="${REGION}" --replicas="${NUMBER_COMPUTE_NODES}" ${HCP_CLUSTER_OPTS} ${HOSTED_CP_OPT} ${CUSTOM_TAGS_OPT}
-    # --billing-account="${BILLING_ACCOUNT}"
     set +x
 fi
 
