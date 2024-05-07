@@ -38,7 +38,7 @@ CLUSTER_NAME="${PREFIX}-test"
 ACTION="create"
 # --env is hidden option to force the creation on prod
 ENV_OPT="--env=staging"
-CLUSTER_WAIT_TIMEOUT="10s"
+WAIT_TIMEOUT="10s"
 CUSTOM_TAGS_OPT=""
 HOSTED_CP_OPT=""
 BILLING_ACCOUNT=""
@@ -113,7 +113,7 @@ if [ "${ACTION}" == "delete" ]; then
             STATE="$(rosa describe cluster -c ${CLUSTER_NAME} --output=json | jq -r .state)"
             if [ "${STATE}" == "uninstalling" ]; then
                 echo "=> cluster is uninstalling"
-                sleep "${CLUSTER_WAIT_TIMEOUT}"
+                sleep "${WAIT_TIMEOUT}"
             else
                 echo "=> cluster is deleted"
                 break
@@ -189,7 +189,7 @@ while true; do
     STATE="$(rosa describe cluster -c ${CLUSTER_NAME} --output=json | jq -r .state)"
     if [ "${STATE}" != "ready" ]; then
         echo "=> cluster is not ready: ${STATE}"
-        sleep "${CLUSTER_WAIT_TIMEOUT}"
+        sleep "${WAIT_TIMEOUT}"
     else
         echo "=> cluster is ready"
         break
@@ -205,5 +205,15 @@ rosa grant user dedicated-admin --cluster="${CLUSTER_NAME}" --user="${USERNAME}"
 rosa grant user cluster-admin --cluster="${CLUSTER_NAME}" --user="${USERNAME}"
 
 # Now you can login to the console and get the login token.
-echo "=> login to the console: $(rosa describe cluster -c ${CLUSTER_NAME} --output=json | jq -r .console.url)"
+echo "=> waiting for console to come up"
+while true; do
+    URL="$(rosa describe cluster -c ${CLUSTER_NAME} --output=json | jq -r .console.url)"
+    if [ "${URL}" == "null" ]; then
+        echo "=> console is not ready: ${URL}"
+        sleep "${WAIT_TIMEOUT}"
+    else
+        echo "=> login to the console: ${URL}"
+        break
+    fi
+done
 echo "=> login to the api: oc login -u ${USERNAME} -p ${PASSWORD} $(rosa describe cluster -c ${CLUSTER_NAME} --output=json | jq -r .api.url)"
