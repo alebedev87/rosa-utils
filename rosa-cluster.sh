@@ -47,6 +47,7 @@ SUBNET_IDS=""
 REGION="us-west-2"
 NUMBER_COMPUTE_NODES="4"
 HCP_CLUSTER_OPTS="--compute-machine-type=m5.xlarge --machine-cidr 10.0.0.0/16 --service-cidr 172.30.0.0/16 --pod-cidr 10.128.0.0/14 --host-prefix 23"
+ACCOUNT_ROLES_ONLY=""
 
 while [ $# -gt 0 ]; do
   case ${1} in
@@ -83,6 +84,9 @@ while [ $# -gt 0 ]; do
           SUBNET_IDS="$2"
           shift
           ;;
+      --account-roles-only)
+         ACCOUNT_ROLES_ONLY="yes"
+         ;;
       *)
           usage
           ;;
@@ -147,6 +151,8 @@ echo "=> creating custom account roles"
 # Then creation of the personally prefixed ones may be your choice:
 ACCOUNT_ROLES_FILE=$(mktemp)
 rosa create account-roles --prefix="${PREFIX}" --mode auto -y ${HOSTED_CP_OPT} | tee "${ACCOUNT_ROLES_FILE}"
+
+[ -n "${ACCOUNT_ROLES_ONLY}" ] && exit 0
 
 # --mode auto: will create the operator roles and oidc provider too
 # auto mode is opposite to manual mode which only prints the delete commands
