@@ -2,6 +2,9 @@
 
 set -e
 
+# vpc.sh -c: clean and clone terraform module before plan/apply
+# vpc.sh -d: destroy created terraform stack
+
 TERRAFORM_URL="https://github.com/openshift-cs/terraform-vpc-example"
 TERRAFORM_DIR="terraform-vpc-example"
 TERRAFORM_PLAN="rosa.tfplan"
@@ -31,11 +34,7 @@ echo "=> terraform plan"
 [ -f "${TERRAFORM_PLAN}" -a "${1}" = "-c" ] && rm -f "${TERRAFORM_PLAN}"
 terraform plan ${DESTROY_OPT} -out "${TERRAFORM_PLAN}" -var region="${REGION}" -var subnet_azs="${SUBNETS}" -var single_az_only="false"
 
-read -p "=> press any key to apply..."
+read -p "=> press enter to apply..."
 
 echo "=> terraform apply"
 terraform apply ${DESTROY_OPT} "${TERRAFORM_PLAN}"
-
-#SUBNET_IDS=$(terraform output -raw cluster-subnets-string)
-
-#echo "=> subnets: ${SUBNET_IDS}"
