@@ -15,6 +15,7 @@ REGION="us-west-2"
 SUBNETS="[\"usw2-az1\", \"usw2-az2\"]"
 DESTROY_OPT=""
 EXTRA_TAGS_OPT=""
+CLUSTER_NAME="aleb-rosa-hcp"
 
 [ "${1}" = "-d" ] && DESTROY_OPT="-destroy"
 if [ "${1}" = "-t" ]; then
@@ -42,7 +43,7 @@ terraform init
 echo "=> terraform plan"
 [ -f "${TERRAFORM_PLAN}" -a "${1}" = "-c" ] && rm -f "${TERRAFORM_PLAN}"
 set -x
-terraform plan ${DESTROY_OPT} -out "${TERRAFORM_PLAN}" -var region="${REGION}" -var subnet_azs="${SUBNETS}" -var single_az_only="false" ${EXTRA_TAGS_OPT}
+terraform plan ${DESTROY_OPT} -out "${TERRAFORM_PLAN}" -var cluster_name="${CLUSTER_NAME}" -var region="${REGION}" -var subnet_azs="${SUBNETS}" -var single_az_only="false" ${EXTRA_TAGS_OPT}
 set +x
 
 read -p "=> press enter to apply..."

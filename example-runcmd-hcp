@@ -2,3 +2,4 @@
 ./rosa-cluster.sh --password xxx --hcp --subnets "subnet-0da158fc18a1da625,subnet-026c7994149357400,subnet-0ff2a7fc4d38f2cdf,subnet-0ec47c41b544bc06e"
 ./rosa-cluster.sh --delete --cluster-name alebed0507-test --hcp
 ./vpc.sh -t kubernetes.io/cluster/2b3o051jqdm7cf5l90sgblu3t8rr5asb=owned
+./vpc.sh -d
