@@ -24,6 +24,7 @@ Usage: ${0} [OPTIONS]
     --tags              Add additional resource tags (tag1:val1,tag2:val2) [optional].
     --hcp               Create ROSA Hosted Control Plane cluster [optional].
     --subnets           Subnet IDs [optional].
+    --nightly           Use latest nightly version [optional].
 EOF
     exit 1
 }
@@ -48,6 +49,8 @@ REGION="us-west-2"
 NUMBER_COMPUTE_NODES="4"
 HCP_CLUSTER_OPTS="--compute-machine-type=m5.xlarge --machine-cidr 10.0.0.0/16 --service-cidr 172.30.0.0/16 --pod-cidr 10.128.0.0/14 --host-prefix 23"
 ACCOUNT_ROLES_ONLY=""
+NIGHTLY="no"
+NIGHTLY_OPT=""
 
 while [ $# -gt 0 ]; do
   case ${1} in
@@ -86,6 +89,9 @@ while [ $# -gt 0 ]; do
           ;;
       --account-roles-only)
          ACCOUNT_ROLES_ONLY="yes"
+         ;;
+      --nightly)
+         NIGHTLY="yes"
          ;;
       *)
           usage
@@ -145,6 +151,14 @@ rosa login ${ENV_OPT} --token="${ROSA_TOKEN}"
 echo "=> initializing rosa client"
 rosa init
 
+if [ "${NIGHTLY}" == "yes" ]; then
+    echo "=> getting nightly version"
+   NIGHTLY_VERSION=$(rosa list versions --channel-group=nightly --hosted-cp -o json | jq -r .[0].raw_id)
+   NIGHTLY_Y_VERSION=$(cut -d. -f1,2 <<<"${NIGHTLY_VERSION}")
+   [ -z "${NIGHTLY_Y_VERSION}" ] && { echo "ERROR: no valid nightly version"; exit 1; }
+   NIGHTLY_OPT="--channel-group=nightly --version=${NIGHTLY_VERSION}"
+fi
+
 echo "=> creating custom account roles"
 # You may need to create the account roles (controlplane, worker, installer, etc.) in your AWS account.
 # These roles can be shared between users, but be aware that they may be updated by another user to use the trusted entity from prod or staging which may be different from your choice.
@@ -186,7 +200,7 @@ else
     rosa create operator-roles ${HOSTED_CP_OPT} --prefix="${PREFIX}" --oidc-config-id="${OIDC_ID}" --installer-role-arn="${INSTALLER_HCP_ROLE_ARN}" -y -m auto
     echo "=> creating cluster ${CLUSTER_NAME}"
     set -x
-    rosa create cluster --cluster-name="${CLUSTER_NAME}" --sts -m auto --role-arn="${INSTALLER_HCP_ROLE_ARN}" --support-role-arn="${SUPPORT_HCP_ROLE_ARN}" --worker-iam-role-arn="${WORKER_HCP_ROLE_ARN}" --oidc-config-id=${OIDC_ID} --operator-roles-prefix=${PREFIX} --subnet-ids=${SUBNET_IDS} --region="${REGION}" --replicas="${NUMBER_COMPUTE_NODES}" ${HCP_CLUSTER_OPTS} ${HOSTED_CP_OPT} ${CUSTOM_TAGS_OPT}
+    rosa create cluster --cluster-name="${CLUSTER_NAME}" --sts -m auto --role-arn="${INSTALLER_HCP_ROLE_ARN}" --support-role-arn="${SUPPORT_HCP_ROLE_ARN}" --worker-iam-role-arn="${WORKER_HCP_ROLE_ARN}" --oidc-config-id=${OIDC_ID} --operator-roles-prefix=${PREFIX} --subnet-ids=${SUBNET_IDS} --region="${REGION}" --replicas="${NUMBER_COMPUTE_NODES}" ${HCP_CLUSTER_OPTS} ${HOSTED_CP_OPT} ${CUSTOM_TAGS_OPT} ${NIGHTLY_OPT}
     set +x
 fi
 
