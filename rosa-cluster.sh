@@ -187,6 +187,9 @@ if [ -z "${HOSTED_CP_OPT}" ]; then
     # Don't forget to notice the OIDC provider ARN!
     # You may need it to generate credentials for add on operators using ccoctl.
     # Example: arn:aws:iam::<awsaccount>:oidc-provider/d3gt1gce2zmg3d.cloudfront.net/225om899gi7c9bng49rtt1qli5hkkchq
+    set -x
+    rosa create cluster --cluster-name="${CLUSTER_NAME}" --sts --multi-az --controlplane-iam-role="${CONTROL_PLANE_ROLE_ARN}" --worker-iam-role="${WORKER_ROLE_ARN}" ${CUSTOM_TAGS_OPT}
+    set +x
 else
     INSTALLER_HCP_ROLE_ARN=$(\grep 'Created role' "${ACCOUNT_ROLES_FILE}" | \grep -oP 'arn:aws:iam:.*' | \grep 'HCP-ROSA-Installer-Role' | tr -d \')
     SUPPORT_HCP_ROLE_ARN=$(\grep 'Created role' "${ACCOUNT_ROLES_FILE}" | \grep -oP 'arn:aws:iam:.*' | \grep 'HCP-ROSA-Support-Role' | tr -d \')
