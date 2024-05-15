@@ -1,0 +1,8 @@
+apiVersion: networking.olm.openshift.io/v1
+kind: AWSLoadBalancerController
+metadata:
+  name: cluster
+spec:
+  subnetTagging: Manual
+  credentialsRequestConfig:
+    stsIAMRoleARN: "arn:aws:iam::269733383066:role/albo-controller"
