@@ -2,9 +2,16 @@
 
 set -e
 
-# vpc.sh -c: clean and clone terraform module before plan/apply
-# vpc.sh -d: destroy created terraform stack
-# vpc.sh -t <key>=<value>: add extra tag to the stack
+usage() {
+    cat <<EOF
+Create or delete a ROSA cluster.
+Usage: ${0} [OPTIONS]
+    -c      Clean and clone terraform module before plan/apply.
+    -d      Destroy created terraform stack.
+    -t      add extra tag to the stack (<key>=<value>).
+EOF
+    exit 0
+}
 
 TERRAFORM_URL="https://github.com/openshift-cs/terraform-vpc-example"
 TERRAFORM_DIR="terraform-vpc-example"
@@ -16,6 +23,8 @@ SUBNETS="[\"usw2-az1\", \"usw2-az2\"]"
 DESTROY_OPT=""
 EXTRA_TAGS_OPT=""
 CLUSTER_NAME="aleb-rosa-hcp"
+
+[ "${1}" = "-h" ] && usage
 
 [ "${1}" = "-d" ] && DESTROY_OPT="-destroy"
 if [ "${1}" = "-t" ]; then
