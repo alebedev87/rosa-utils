@@ -1,0 +1,125 @@
+# Step 09 — Teardown (full, back to an empty account)
+# Account: 759945100724  OCM: stage  Date: 2026-10-12
+#
+# Order matters. Two traps:
+#   1. The cluster must be FULLY uninstalled before the operator roles and
+#      OIDC config go: the uninstall USES them to clean up AWS resources.
+#      Delete them early and the uninstall wedges half-finished.
+#   2. The cluster must be fully gone before the VPC stack, or leftovers in
+#      the VPC block delete-stack.
+
+## 1. Cluster  (~12 min)
+
+AWS_PROFILE=saml rosa delete cluster -c alebedev-test --watch -y
+
+# ...
+# 2026-10-12 14:11:07 hostedclusters alebedev-test All guest resources destroyed
+# INFO: Cluster 'alebedev-test' completed uninstallation
+#
+# rosa prints the follow-up commands. It listed exactly the 8 operator roles
+# and no account role, which confirms `--prefix alebedev` below is safe even
+# though the account roles share that prefix.
+
+## 2. Operator roles
+
+AWS_PROFILE=saml rosa delete operator-roles --prefix alebedev -m auto -y
+# Deleted all 8 (alebedev-kube-system-*, alebedev-openshift-*). Account roles
+# untouched.
+
+## 3. OIDC config
+
+AWS_PROFILE=saml rosa delete oidc-config --oidc-config-id 2td89f2qnstd6p18r7dmj5d93ufr76gs -m auto -y
+
+# USE oidc-config, NOT oidc-provider.
+# `rosa delete cluster` suggests:
+#     rosa delete oidc-provider --oidc-config-id <id>
+# but that is the Classic path -- its help says "Cleans up OIDC provider of
+# deleted STS cluster" and it only removes the IAM provider, leaving the
+# managed config still registered in OCM. `rosa delete oidc-config` says
+# "Cleans up OIDC config based on registered OIDC Config ID" and does both.
+
+## 4. VPC stack  —  FAILS THE FIRST TIME, see below
+
+AWS_PROFILE=saml aws cloudformation delete-stack --region us-west-2 --stack-name alebedev-test-vpc
+AWS_PROFILE=saml aws cloudformation wait stack-delete-complete --region us-west-2 --stack-name alebedev-test-vpc
+
+### GOTCHA: DELETE_FAILED on the VPC
+#
+# Everything deleted except the VPC itself:
+#
+#   VPC  DELETE_FAILED
+#   "The vpc 'vpc-0dbbc83fea9143e44' has dependencies and cannot be deleted"
+#
+# Cause: a leftover security group
+#
+#   sg-0633f729a0a847ec0  2td8f1mb90vr0c3jefg9dv89uijh1bn3-vpce-private-router
+#
+# named after the CLUSTER ID. HCP creates it for the private-router VPC
+# endpoint; it is not a CloudFormation resource, so CFN neither knows about it
+# nor removes it, and the cluster uninstall leaves it behind. No ENIs, no
+# endpoints and no subnets were left -- just this one SG.
+#
+# Fix:
+
+AWS_PROFILE=saml aws ec2 delete-security-group --region us-west-2 --group-id sg-0633f729a0a847ec0
+AWS_PROFILE=saml aws cloudformation delete-stack --region us-west-2 --stack-name alebedev-test-vpc
+# -> stack gone, 0 VPCs in us-west-2
+#
+# To find it next time (skip 'default', it goes with the VPC):
+#   aws ec2 describe-security-groups --region us-west-2 \
+#     --filters Name=vpc-id,Values=<vpc> \
+#     --query "SecurityGroups[?GroupName!='default'].GroupId"
+#
+# rosa-hcp.sh handles this: on a failed delete-stack it reaps orphaned
+# available ENIs and non-default SGs, then retries once.
+
+### Side note: expired SAML credentials
+#
+# `aws cloudformation wait` also exits non-zero when the AWS session expires
+# mid-wait (ExpiredToken) and cannot be told apart from a real failure.
+# Deletion continues server-side either way, so re-check the stack state
+# rather than trusting the waiter's exit code.
+
+## 5. Account-wide roles
+#
+# These were deliberately KEPT at first, then removed to leave no footprint in
+# a shared account. Keeping them is free and makes the next cluster shorter;
+# deleting them returns the account to 'no ROSA cluster can be created here'.
+
+AWS_PROFILE=saml rosa delete account-roles --prefix alebedev --hosted-cp -m auto -y
+AWS_PROFILE=saml rosa delete user-role --role-arn arn:aws:iam::759945100724:role/alebedev-User-alebedev@redhat.com-Role -m auto -y
+AWS_PROFILE=saml rosa delete ocm-role  --role-arn arn:aws:iam::759945100724:role/alebedev-OCM-Role-11009103 -m auto -y
+
+# user-role and ocm-role are unlinked automatically before deletion:
+#   WARN: Role ARN '...' is linked to organization '1HAXGgCYqHpednsRDiwWsZBmDlA'
+#   INFO: Successfully unlinked role-arn '...'
+#   INFO: Successfully deleted the OCM role
+#
+# Delete ocm-role LAST -- it is what authorizes the other operations.
+
+## Final state — verified
+
+$ aws iam list-roles    --query 'Roles[?starts_with(RoleName,`alebedev`)]'      -> none
+$ aws iam list-policies --scope Local --query '...starts_with(`alebedev`)'      -> none
+$ aws iam list-open-id-connect-providers                                        -> []
+$ aws ec2 describe-vpcs --region us-west-2 | jq '.Vpcs|length'                  -> 0
+$ rosa list clusters      -> No clusters available
+$ rosa list ocm-role      -> No ocm roles available
+$ rosa list user-role     -> No user roles available
+$ rosa list account-roles -> no account roles found
+
+# Account 759945100724 is back to its pre-2026-10-12 state. Nothing billing.
+
+## Note on sharing this account
+#
+# Deleting the ocm-role is only correct because nobody else was using it yet.
+# An ocm-role is per-AWS-account and LINKED to one OCM org, so in a shared
+# account it becomes shared infrastructure for everyone in that org -- the
+# same dynamic that blocked the first attempt on 301721915996, where the
+# existing role belonged to the CI org (ext 13849960) and showed LINKED=No
+# for Red Hat1 (ext 11009103).
+#
+# Roles for DIFFERENT orgs coexist fine: the name embeds the org external ID.
+# If this account gets shared, create the ocm-role with a neutral prefix
+# (e.g. --prefix rosa-hcp) rather than a personal one, so nobody deletes it
+# thinking it is somebody's leftover.

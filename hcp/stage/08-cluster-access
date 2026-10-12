@@ -1,0 +1,58 @@
+# Step 08 — Cluster access (admin user + oc login)
+# Account: 759945100724  OCM: stage  Date: 2026-10-12
+#
+# The generated cluster-admin password has been redacted. `rosa create admin`
+# prints it once to the terminal and it is not recoverable afterwards -- if you
+# lose it, delete and recreate the admin user. Never commit it.
+
+## Why this step is needed at all
+#
+# ROSA does NOT behave like a self-managed `openshift-install` cluster:
+#   - there is no auth/kubeconfig written anywhere
+#   - there is no `kubeadmin` user and no kubeadmin-password file
+#
+# A freshly created HCP cluster has NO way to authenticate. Confirmed:
+#   $ AWS_PROFILE=saml rosa list idps  -c alebedev-test
+#   INFO: There are no identity providers configured for cluster 'alebedev-test'
+#   $ AWS_PROFILE=saml rosa list users -c alebedev-test
+#   INFO: There are no users configured for cluster 'alebedev-test'
+#
+# You create a credential, then `oc login`, and oc writes your local
+# ~/.kube/config. That is the only kubeconfig that exists.
+#
+# (The guest.kubeconfig in the repo root is from old HyperShift/flexy work.
+#  Unrelated — do not reuse it.)
+
+## Option taken: managed htpasswd cluster-admin (quick, throwaway clusters)
+
+AWS_PROFILE=saml rosa create admin -c alebedev-test
+
+## Output
+
+INFO: Admin account has been added to cluster 'alebedev-test'.
+INFO: Please securely store this generated password. If you lose this password you can delete and recreate the cluster admin user.
+INFO: To login, run the following command:
+
+   oc login https://api.alebedev-test.5199.s3.devshift.org:443 --username cluster-admin --password <REDACTED>
+
+INFO: It may take several minutes for this access to become active.
+
+## Login
+#
+# The 'several minutes' is real — the cluster-admin IdP has to roll out.
+# Early attempts fail with 401 / "Login failed (401 Unauthorized)". Retry.
+
+oc login https://api.alebedev-test.5199.s3.devshift.org:443 \
+  --username cluster-admin --password <REDACTED>
+
+# Console (same credentials):
+#   https://console-openshift-console.apps.rosa.alebedev-test.5199.s3.devshift.org
+
+## Alternative not taken: a real IdP
+#
+# For a cluster that sticks around, prefer an IdP over a generated admin:
+#   AWS_PROFILE=saml rosa create idp -c alebedev-test --type github --mapping-method claim
+
+## Cleanup
+
+AWS_PROFILE=saml rosa delete admin -c alebedev-test

@@ -1,0 +1,86 @@
+# ROSA HCP on AWS 759945100724 (OCM stage) — SUCCESS
+# Date: 2026-10-12
+
+Working ROSA HCP cluster created end to end. This directory supersedes the
+flat hcp/01-..05-* files, which record the earlier attempt on account
+301721915996 that was blocked at OCM org <-> AWS account authorization.
+
+## What was different this time
+
+The blocker was never the OCM org (Red Hat1, 1HAXGgCYqHpednsRDiwWsZBmDlA --
+same org both times) and never the Red Hat SSO login. It was the AWS account:
+301721915996 had no ocm-role linked to Red Hat1, and its only ocm-role was a
+shared CI role we would not touch.
+
+759945100724 is empty and dedicated, so `rosa create ocm-role` (step 01) could
+create AND link our own role. Everything after that just worked.
+
+## Cluster
+
+Name            alebedev-test
+ID              2td8f1mb90vr0c3jefg9dv89uijh1bn3
+External ID     155795a1-7049-4ff0-86fc-9bffe88c75f0
+Version         4.22.16 (stable)
+Region          us-west-2   (only us-east-2 / us-west-2 offer HCP on stage)
+API URL         https://api.alebedev-test.5199.s3.devshift.org:443
+DNS             alebedev-test.5199.s3.devshift.org
+Details page    https://console.dev.redhat.com/openshift/details/s/3KawIC4LgAXytEB11CCovqaBbAL
+Control plane   Red Hat hosted, MultiAZ
+Data plane      SingleAZ us-west-2a, 2x m5.xlarge
+
+## Key identifiers
+
+AWS account         759945100724        (also the billing account)
+AWS profile         saml -> 759945100724-openshift-installer-restricted
+OCM                 https://api.stage.openshift.com
+OCM org             Red Hat1 / 1HAXGgCYqHpednsRDiwWsZBmDlA / ext 11009103
+Role prefix         alebedev
+OIDC config id      2td89f2qnstd6p18r7dmj5d93ufr76gs
+VPC                 vpc-0dbbc83fea9143e44   (CFN stack alebedev-test-vpc)
+Public subnet       subnet-068756ab60e11f4d9   10.0.0.0/24
+Private subnet      subnet-0789a957376724be1   10.0.1.0/24
+
+## Steps
+
+00-context              starting state, identity, quota, plan
+01-create-ocm-role      <- THE FIX; create + link ocm-role to Red Hat1
+02-create-user-role     link OCM user to the AWS account
+03-create-account-roles 3 HCP account roles (account-wide, reusable)
+04-create-network       VPC + subnets via CloudFormation  (~3.5 min)
+05-create-oidc-config   managed OIDC  (independent of 04, ran in parallel)
+06-create-operator-roles 8 operator roles bound to that OIDC config
+07-create-cluster       dry-run then real; ready ~10 min after create
+
+Steps 04 and 05/06 have no dependency on each other and can run in parallel.
+Steps 01-03 are account-wide and reusable -- a second cluster in this account
+only needs 04-07 (and 05/06 only if you want a fresh OIDC config).
+
+## Access
+
+08-cluster-access. HCP gives you NO kubeadmin and NO kubeconfig file -- you
+create a credential, then `oc login` writes your local ~/.kube/config.
+
+## Teardown — DONE, see 09-teardown
+
+The cluster and everything else created here was torn down the same day and
+the account is back to its pre-2026-10-12 state (no roles, no VPC, nothing
+billing). 09-teardown has the full sequence and two gotchas worth knowing:
+
+  - delete-stack FAILS the first time. HCP leaves a
+    '<cluster-id>-vpce-private-router' security group that CloudFormation
+    does not own and the uninstall does not remove; it blocks the VPC
+    delete. Remove it, then retry.
+  - use `rosa delete oidc-config`, NOT the `rosa delete oidc-provider` that
+    `rosa delete cluster` suggests -- the latter is the Classic path and
+    leaves the managed config registered in OCM.
+
+## Doing this again
+
+rosa-hcp.sh in the repo root automates all of 01-08 and the teardown,
+including both gotchas above:
+
+  AWS_PROFILE=saml ./rosa-hcp.sh --cluster-name mytest
+  AWS_PROFILE=saml ./rosa-hcp.sh --cluster-name mytest --delete
+
+It is NOT yet exercised end to end -- it was written from these steps but
+never run, since the cluster was torn down by hand first.

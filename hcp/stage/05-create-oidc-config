@@ -1,0 +1,23 @@
+# Step 05 — Create managed OIDC config
+# Account: 759945100724  OCM: stage  Date: 2026-10-12
+#
+# Managed = Red Hat-hosted issuer; no S3 bucket / Secrets Manager resources
+# are created in our account. Only an IAM OIDC provider is registered locally.
+#
+# OIDC config ID: 2td89f2qnstd6p18r7dmj5d93ufr76gs
+# Issuer URL:     oidc.os1.devshift.org/2td89f2qnstd6p18r7dmj5d93ufr76gs
+#
+# This is per-cluster-ish: the ID is fed to both `create operator-roles`
+# (step 06) and `create cluster` (step 07), and they MUST match.
+#
+# Run independently of the VPC (step 04) -- there is no dependency between
+# them, so they were done in parallel.
+
+## Command
+
+AWS_PROFILE=saml rosa create oidc-config --managed=true --mode auto -y
+
+## Output
+
+INFO: Creating OIDC provider using 'arn:aws:iam::759945100724:role/759945100724-openshift-installer-restricted'
+INFO: Created OIDC provider with ARN 'arn:aws:iam::759945100724:oidc-provider/oidc.os1.devshift.org/2td89f2qnstd6p18r7dmj5d93ufr76gs'

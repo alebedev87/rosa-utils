@@ -1,0 +1,60 @@
+# Step 04 — Create network (VPC + subnets)
+# Account: 759945100724  Region: us-west-2  OCM: stage  Date: 2026-10-12
+#
+# Same shape as the first attempt: single AZ, 10.0.0.0/16, one public + one
+# private subnet. `rosa create network` just drives a CloudFormation stack
+# named after the Name param. Took ~3.5 min, almost all of it NATGateway1.
+#
+# Run in parallel with steps 05/06 (OIDC + operator roles) -- no dependency.
+
+## Command
+
+AWS_PROFILE=saml rosa create network rosa-quickstart-default-vpc \
+  --param Region=us-west-2 \
+  --param Name=alebedev-test-vpc \
+  --param AvailabilityZoneCount=1 \
+  --param AZ1=us-west-2a \
+  --param VpcCidr=10.0.0.0/16 \
+  --mode auto -y
+
+## Resources created in stack 'alebedev-test-vpc'
+
+Resource: VPC,                   Type: AWS::EC2::VPC,            ID: vpc-0dbbc83fea9143e44
+Resource: SubnetPublic1,         Type: AWS::EC2::Subnet,         ID: subnet-068756ab60e11f4d9
+Resource: SubnetPrivate1,        Type: AWS::EC2::Subnet,         ID: subnet-0789a957376724be1
+Resource: InternetGateway,       Type: AWS::EC2::InternetGateway,ID: igw-0033344db7824f4d0
+Resource: AttachGateway,         Type: AWS::EC2::VPCGatewayAttachment, ID: IGW|vpc-0dbbc83fea9143e44
+Resource: NATGateway1,           Type: AWS::EC2::NatGateway,     ID: nat-017149348642c3d34
+Resource: ElasticIP1,            Type: AWS::EC2::EIP,            ID: 52.33.104.1
+Resource: PublicRouteTable,      Type: AWS::EC2::RouteTable,     ID: rtb-0fe10793095b92507
+Resource: PublicRoute,           Type: AWS::EC2::Route,          ID: rtb-0fe10793095b92507|0.0.0.0/0
+Resource: PublicSubnetRouteTableAssociation1,  Type: AWS::EC2::SubnetRouteTableAssociation, ID: rtbassoc-038e278dce48c75b5
+Resource: PrivateRouteTable,     Type: AWS::EC2::RouteTable,     ID: rtb-0d0e04ede48969c3e
+Resource: PrivateRoute,          Type: AWS::EC2::Route,          ID: rtb-0d0e04ede48969c3e|0.0.0.0/0
+Resource: PrivateSubnetRouteTableAssociation1, Type: AWS::EC2::SubnetRouteTableAssociation, ID: rtbassoc-052513f3bdb3b7fa4
+Resource: SecurityGroup,         Type: AWS::EC2::SecurityGroup,  ID: sg-0cf267058b79cffb0
+Resource: S3VPCEndpoint,         Type: AWS::EC2::VPCEndpoint,    ID: vpce-0d5d8170024e00947
+Resource: STSVPCEndpoint,        Type: AWS::EC2::VPCEndpoint,    ID: vpce-0f23fb31ad0907e4b
+Resource: EC2VPCEndpoint,        Type: AWS::EC2::VPCEndpoint,    ID: vpce-0227eb2fccc508345
+Resource: KMSVPCEndpoint,        Type: AWS::EC2::VPCEndpoint,    ID: vpce-030400fc2f0b62a08
+Resource: EcrApiVPCEndpoint,     Type: AWS::EC2::VPCEndpoint,    ID: vpce-056f6fe8110d93e97
+Resource: EcrDkrVPCEndpoint,     Type: AWS::EC2::VPCEndpoint,    ID: vpce-0c295b4c9178186d3
+
+Stack alebedev-test-vpc created
+---EXIT:0---
+
+## Subnet layout (what step 07 consumes)
+
+$ AWS_PROFILE=saml aws ec2 describe-subnets --region us-west-2 \
+    --filters Name=vpc-id,Values=vpc-0dbbc83fea9143e44
+
+AZ           CIDR          ID                          Name                                Public
+us-west-2a   10.0.0.0/24   subnet-068756ab60e11f4d9    alebedev-test-vpc-Public-Subnet-1   True
+us-west-2a   10.0.1.0/24   subnet-0789a957376724be1    alebedev-test-vpc-Private-Subnet-1  False
+
+## Teardown
+#
+# AWS_PROFILE=saml aws cloudformation delete-stack --region us-west-2 \
+#     --stack-name alebedev-test-vpc
+# Delete the cluster FIRST -- it leaves ENIs/SGs in the VPC that block the
+# stack delete otherwise.

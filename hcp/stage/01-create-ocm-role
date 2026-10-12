@@ -1,0 +1,43 @@
+# Step 01 — Create & link ocm-role  [THE FIX]
+# Account: 759945100724  OCM: stage  Date: 2026-10-12
+#
+# This is the step that was impossible on 301721915996 and that blocked the
+# whole first attempt. The ocm-role is what authorizes the OCM organization to
+# reach into the AWS account. It is per-AWS-account, and must be LINKED to the
+# org. On the old account the only ocm-role was a shared CI role we would not
+# touch; here the account is empty so we create our own.
+#
+# Role name is derived from prefix + org external ID (11009103):
+#   alebedev-OCM-Role-11009103
+#
+# Basic (non-admin) role -- no --admin flag. Admin is only needed if you want
+# OCM to auto-create operator roles on your behalf; we create those ourselves
+# in step 06.
+#
+# Requires iam:CreateRole. The 759945100724-openshift-installer-restricted
+# role the 'saml' profile assumes does have it. Linking additionally requires
+# the OCM user to be able to link for the org -- it worked here.
+
+## Command
+
+AWS_PROFILE=saml rosa create ocm-role --prefix alebedev --mode auto -y
+
+## Output
+
+INFO: Creating role using 'arn:aws:iam::759945100724:role/759945100724-openshift-installer-restricted'
+INFO: Attached trust policy to role 'alebedev-OCM-Role-11009103(https://console.aws.amazon.com/iam/home?#/roles/alebedev-OCM-Role-11009103)': {"Version": "2012-10-17", "Statement": [{"Action": ["sts:AssumeRole"], "Effect": "Allow", "Condition": {"StringEquals": {"sts:ExternalId": "1HAXGgCYqHpednsRDiwWsZBmDlA"}}, "Principal": {"AWS": ["arn:aws:iam::644306948063:role/RH-Managed-OpenShift-Installer"]}}]}
+INFO: Created role 'alebedev-OCM-Role-11009103' with ARN 'arn:aws:iam::759945100724:role/alebedev-OCM-Role-11009103'
+INFO: Attached policy 'arn:aws:iam::759945100724:policy/alebedev-OCM-Role-11009103-Policy' to role 'alebedev-OCM-Role-11009103(https://console.aws.amazon.com/iam/home?#/roles/alebedev-OCM-Role-11009103)'
+
+INFO: Successfully linked role-arn 'arn:aws:iam::759945100724:role/alebedev-OCM-Role-11009103' with organization account '1HAXGgCYqHpednsRDiwWsZBmDlA'
+
+## Result
+
+LINKED = Yes for org 1HAXGgCYqHpednsRDiwWsZBmDlA (Red Hat1).
+The 'Organization is not authorized to access AWS Account' error from the
+first attempt is resolved.
+
+## Notes
+#
+# The trust policy lets Red Hat's installer account 644306948063 assume this
+# role, gated on sts:ExternalId == our OCM org ID, so only Red Hat1 can use it.

@@ -1,0 +1,64 @@
+# Step 06 — Create operator roles (HCP), prefix 'alebedev'
+# Account: 759945100724  OCM: stage  Date: 2026-10-12
+#
+# 8 roles, one per in-cluster operator. Each trusts the OIDC provider from
+# step 05 via sts:AssumeRoleWithWebIdentity, conditioned on the operator's
+# service account `sub`. So these are bound to that specific OIDC config --
+# if you recreate the OIDC config you must recreate these too.
+#
+# HCP needs a different set than Classic (note capa-controller-manager,
+# control-plane-operator, kms-provider -- these are HCP-specific).
+
+## Command
+
+AWS_PROFILE=saml rosa create operator-roles --hosted-cp \
+  --prefix alebedev \
+  --oidc-config-id 2td89f2qnstd6p18r7dmj5d93ufr76gs \
+  --installer-role-arn arn:aws:iam::759945100724:role/alebedev-HCP-ROSA-Installer-Role \
+  --mode auto -y
+
+## Roles created (role -> attached AWS managed policy)
+
+alebedev-kube-system-control-plane-operator
+    ROSAControlPlaneOperatorPolicy
+    sub: system:serviceaccount:kube-system:control-plane-operator
+
+alebedev-kube-system-kms-provider
+    ROSAKMSProviderPolicy
+    sub: system:serviceaccount:kube-system:kms-provider
+
+alebedev-kube-system-kube-controller-manager
+    ROSAKubeControllerPolicy
+    sub: system:serviceaccount:kube-system:kube-controller-manager
+
+alebedev-kube-system-capa-controller-manager
+    ROSANodePoolManagementPolicy
+    sub: system:serviceaccount:kube-system:capa-controller-manager
+
+alebedev-openshift-image-registry-installer-cloud-credentials
+    ROSAImageRegistryOperatorPolicy
+    sub: system:serviceaccount:openshift-image-registry:cluster-image-registry-operator
+         system:serviceaccount:openshift-image-registry:registry
+
+alebedev-openshift-ingress-operator-cloud-credentials
+    ROSAIngressOperatorPolicy
+    sub: system:serviceaccount:openshift-ingress-operator:ingress-operator
+
+alebedev-openshift-cluster-csi-drivers-ebs-cloud-credentials
+    ROSAAmazonEBSCSIDriverOperatorPolicy
+    sub: system:serviceaccount:openshift-cluster-csi-drivers:aws-ebs-csi-driver-operator
+         system:serviceaccount:openshift-cluster-csi-drivers:aws-ebs-csi-driver-controller-sa
+
+alebedev-openshift-cloud-network-config-controller-cloud-credent
+    ROSACloudNetworkConfigOperatorPolicy
+    sub: system:serviceaccount:openshift-cloud-network-config-controller:cloud-network-config-controller
+    # NOTE: name is truncated at 64 chars ("-credent", not "-credentials").
+    # That is expected -- IAM role names max out at 64.
+
+## Trust policy shape (same for all 8, only the `sub` list differs)
+
+{"Version": "2012-10-17", "Statement": [{"Action": ["sts:AssumeRoleWithWebIdentity"], "Effect": "Allow", "Condition": {"StringEquals": {"oidc.os1.devshift.org/2td89f2qnstd6p18r7dmj5d93ufr76gs:sub": [...]}}, "Principal": {"Federated": "arn:aws:iam::759945100724:oidc-provider/oidc.os1.devshift.org/2td89f2qnstd6p18r7dmj5d93ufr76gs"}}]}
+
+## Exit
+
+---EXIT:0---   all 8 roles + policies created

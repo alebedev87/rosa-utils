@@ -1,0 +1,21 @@
+# Step 02 — Create & link user-role
+# Account: 759945100724  OCM: stage  Date: 2026-10-12
+#
+# The user-role proves to OCM that the OCM user creating the cluster really
+# does control this AWS account. One per OCM user per AWS account.
+# Name is derived from prefix + OCM username:
+#   alebedev-User-alebedev@redhat.com-Role
+# Trust is gated on sts:ExternalId == my OCM account ID (2LMLxZNpTtamusby0ItGlLIsT2X),
+# as opposed to the ocm-role in step 01 which is gated on the ORG id.
+# No managed policy is attached -- it exists purely as an identity assertion.
+
+## Command
+
+AWS_PROFILE=saml rosa create user-role --prefix alebedev --mode auto -y
+
+## Output
+
+INFO: Creating ocm user role using 'arn:aws:iam::759945100724:role/759945100724-openshift-installer-restricted'
+INFO: Attached trust policy to role 'alebedev-User-alebedev@redhat.com-Role(https://console.aws.amazon.com/iam/home?#/roles/alebedev-User-alebedev@redhat.com-Role)': {"Version": "2012-10-17", "Statement": [{"Action": ["sts:AssumeRole"], "Effect": "Allow", "Condition": {"StringEquals": {"sts:ExternalId": "2LMLxZNpTtamusby0ItGlLIsT2X"}}, "Principal": {"AWS": ["arn:aws:iam::644306948063:role/RH-Managed-OpenShift-Installer"]}}]}
+INFO: Created role 'alebedev-User-alebedev@redhat.com-Role' with ARN 'arn:aws:iam::759945100724:role/alebedev-User-alebedev@redhat.com-Role'
+INFO: Successfully linked role ARN 'arn:aws:iam::759945100724:role/alebedev-User-alebedev@redhat.com-Role' with account '2LMLxZNpTtamusby0ItGlLIsT2X'

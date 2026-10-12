@@ -1,0 +1,36 @@
+# Step 03 — Create account roles (HCP), prefix 'alebedev'
+# Account: 759945100724  OCM: stage  Date: 2026-10-12
+#
+# Account roles are account-wide and reusable across clusters (NOT per-cluster).
+# --hosted-cp creates the HCP variants (3 roles) rather than the Classic set.
+# Requires iam:CreateRole + iam:AttachRolePolicy.
+#
+# Roles created:
+#   alebedev-HCP-ROSA-Installer-Role  <- ROSAInstallerPolicy
+#       trusted by arn:aws:iam::644306948063:role/RH-Managed-OpenShift-Installer
+#   alebedev-HCP-ROSA-Support-Role    <- ROSASRESupportPolicy
+#       trusted by arn:aws:iam::644306948063:role/RH-Technical-Support-11009103
+#   alebedev-HCP-ROSA-Worker-Role     <- ROSAWorkerInstancePolicy
+#                                        + AmazonEC2ContainerRegistryReadOnly
+#       trusted by ec2.amazonaws.com (it is an instance profile role)
+
+## Command
+
+AWS_PROFILE=saml rosa create account-roles --hosted-cp --prefix alebedev --mode auto -y
+
+## Output
+
+INFO: Creating hosted CP account roles using 'arn:aws:iam::759945100724:role/759945100724-openshift-installer-restricted'
+INFO: Attached trust policy to role 'alebedev-HCP-ROSA-Installer-Role(https://console.aws.amazon.com/iam/home?#/roles/alebedev-HCP-ROSA-Installer-Role)': {"Version": "2012-10-17", "Statement": [{"Action": ["sts:AssumeRole"], "Effect": "Allow", "Principal": {"AWS": ["arn:aws:iam::644306948063:role/RH-Managed-OpenShift-Installer"]}}]}
+INFO: Created role 'alebedev-HCP-ROSA-Installer-Role' with ARN 'arn:aws:iam::759945100724:role/alebedev-HCP-ROSA-Installer-Role'
+INFO: Attached policy 'ROSAInstallerPolicy(https://docs.aws.amazon.com/aws-managed-policy/latest/reference/ROSAInstallerPolicy)' to role 'alebedev-HCP-ROSA-Installer-Role(https://console.aws.amazon.com/iam/home?#/roles/alebedev-HCP-ROSA-Installer-Role)'
+
+INFO: Attached trust policy to role 'alebedev-HCP-ROSA-Support-Role(https://console.aws.amazon.com/iam/home?#/roles/alebedev-HCP-ROSA-Support-Role)': {"Version": "2012-10-17", "Statement": [{"Action": ["sts:AssumeRole"], "Effect": "Allow", "Principal": {"AWS": ["arn:aws:iam::644306948063:role/RH-Technical-Support-11009103"]}}]}
+INFO: Created role 'alebedev-HCP-ROSA-Support-Role' with ARN 'arn:aws:iam::759945100724:role/alebedev-HCP-ROSA-Support-Role'
+INFO: Attached policy 'ROSASRESupportPolicy(https://docs.aws.amazon.com/aws-managed-policy/latest/reference/ROSASRESupportPolicy)' to role 'alebedev-HCP-ROSA-Support-Role(https://console.aws.amazon.com/iam/home?#/roles/alebedev-HCP-ROSA-Support-Role)'
+
+INFO: Attached trust policy to role 'alebedev-HCP-ROSA-Worker-Role(https://console.aws.amazon.com/iam/home?#/roles/alebedev-HCP-ROSA-Worker-Role)': {"Version": "2012-10-17", "Statement": [{"Action": ["sts:AssumeRole"], "Effect": "Allow", "Principal": {"Service": ["ec2.amazonaws.com"]}}]}
+INFO: Created role 'alebedev-HCP-ROSA-Worker-Role' with ARN 'arn:aws:iam::759945100724:role/alebedev-HCP-ROSA-Worker-Role'
+INFO: Attached policy 'ROSAWorkerInstancePolicy(https://docs.aws.amazon.com/aws-managed-policy/latest/reference/ROSAWorkerInstancePolicy)' to role 'alebedev-HCP-ROSA-Worker-Role(https://console.aws.amazon.com/iam/home?#/roles/alebedev-HCP-ROSA-Worker-Role)'
+
+INFO: Attached policy 'AmazonEC2ContainerRegistryReadOnly(https://docs.aws.amazon.com/aws-managed-policy/latest/reference/AmazonEC2ContainerRegistryReadOnly)' to role 'alebedev-HCP-ROSA-Worker-Role(https://console.aws.amazon.com/iam/home?#/roles/alebedev-HCP-ROSA-Worker-Role)'

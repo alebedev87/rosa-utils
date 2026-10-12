@@ -1,0 +1,109 @@
+# Step 07 — Create cluster (HCP)
+# Account: 759945100724  OCM: stage  Date: 2026-10-12
+#
+# Same command shape as the first attempt (hcp/05-create-cluster), with the
+# 759945100724 ARNs / OIDC id / subnet ids substituted. On the old account
+# this failed at --dry-run with:
+#   "Organization '1HAXGgCYqHpednsRDiwWsZBmDlA' is not authorized to access
+#    AWS Account '301721915996'"
+# Here --dry-run reported "should succeed" and the real run created it.
+
+## Dry run first
+
+AWS_PROFILE=saml rosa create cluster ... --dry-run -y
+
+INFO: Creating cluster 'alebedev-test'
+INFO: Creating cluster 'alebedev-test' should succeed. Run without the '--dry-run' flag to create the cluster.
+---EXIT:0---
+
+## Command (real)
+
+AWS_PROFILE=saml rosa create cluster \
+  --cluster-name alebedev-test \
+  --hosted-cp --sts \
+  --role-arn arn:aws:iam::759945100724:role/alebedev-HCP-ROSA-Installer-Role \
+  --support-role-arn arn:aws:iam::759945100724:role/alebedev-HCP-ROSA-Support-Role \
+  --worker-iam-role arn:aws:iam::759945100724:role/alebedev-HCP-ROSA-Worker-Role \
+  --oidc-config-id 2td89f2qnstd6p18r7dmj5d93ufr76gs \
+  --operator-roles-prefix alebedev \
+  --subnet-ids subnet-068756ab60e11f4d9,subnet-0789a957376724be1 \
+  --region us-west-2 \
+  --billing-account 759945100724 \
+  --machine-cidr 10.0.0.0/16 \
+  --replicas 2 --compute-machine-type m5.xlarge \
+  -y
+
+## Output
+
+INFO: Cluster 'alebedev-test' has been created.
+
+Name:                       alebedev-test
+Domain Prefix:              alebedev-test
+ID:                         2td8f1mb90vr0c3jefg9dv89uijh1bn3
+External ID:                155795a1-7049-4ff0-86fc-9bffe88c75f0
+Control Plane:              ROSA Service Hosted
+OpenShift Version:          4.22.16
+Channel Group:              stable
+AWS Account:                759945100724
+AWS Billing Account:        759945100724
+Region:                     us-west-2
+Availability:
+ - Control Plane:           MultiAZ          # hosted by Red Hat, always MultiAZ
+ - Data Plane:              SingleAZ         # our 1-AZ VPC from step 04
+Nodes:
+ - Compute (desired):       2   (m5.xlarge)
+Network:
+ - Type:                    OVNKubernetes
+ - Service CIDR:            172.30.0.0/16
+ - Machine CIDR:            10.0.0.0/16
+ - Pod CIDR:                10.128.0.0/14
+ - Host Prefix:             /23
+ - Subnets:                 subnet-068756ab60e11f4d9, subnet-0789a957376724be1
+Managed Policies:           Yes
+State:                      waiting (Waiting for user action)
+Private:                    No
+Created:                    Oct 12 2026 12:41:44 UTC
+Details Page:               https://console.dev.redhat.com/openshift/details/s/3KawIC4LgAXytEB11CCovqaBbAL
+OIDC Endpoint URL:          https://oidc.os1.devshift.org/2td89f2qnstd6p18r7dmj5d93ufr76gs (Managed)
+
+## State progression
+#
+# 'waiting (Waiting for user action)' right after create is NORMAL and does
+# not mean anything is actually required of you -- it clears on its own once
+# OCM verifies the OIDC provider and the 8 operator roles. ~1 min later it
+# moved to 'validating'.
+#
+#   waiting -> validating -> installing -> ready
+
+## Monitoring
+
+AWS_PROFILE=saml rosa describe cluster -c alebedev-test
+AWS_PROFILE=saml rosa logs install -c alebedev-test --watch
+
+## RESULT — cluster reached 'ready' ~10 min after create
+#
+# 12:41:44  created, state=waiting
+# 12:43     state=validating
+# 12:49     state=installing
+# 12:51:31  state=ready
+#
+# DNS:      alebedev-test.5199.s3.devshift.org
+# API URL:  https://api.alebedev-test.5199.s3.devshift.org:443
+# Console:  (empty until the console operator finishes; HCP populates it late)
+#
+# Workers come up AFTER state=ready -- `rosa list machinepools` went
+# 0/2 -> 1/2 -> 2/2 over the following few minutes while the two
+# m5.xlarge instances joined. 'ready' refers to the hosted control plane,
+# not the data plane, so do not read 0/2 as a failure.
+#
+# $ AWS_PROFILE=saml aws ec2 describe-instances --region us-west-2 \
+#     --filters Name=vpc-id,Values=vpc-0dbbc83fea9143e44 Name=instance-state-name,Values=running
+#   i-09a9afe996d27408c  m5.xlarge  us-west-2a  alebedev-test-workers-cwcn2-p8rp9
+#   i-08aa775fad4945d88  m5.xlarge  us-west-2a  alebedev-test-workers-cwcn2-wd8zn
+
+## After it is ready
+#
+# HCP clusters have no default admin. Create one:
+#   AWS_PROFILE=saml rosa create admin -c alebedev-test
+# or add a real IdP:
+#   AWS_PROFILE=saml rosa create idp -c alebedev-test --type github ...
