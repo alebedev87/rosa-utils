@@ -416,6 +416,27 @@ do_create() {
     summary
 }
 
+# Echoes the stack status, or "" when the stack genuinely no longer exists.
+#
+# Dies when the status cannot be established at all. A failed describe-stacks
+# is NOT proof of deletion: with expired credentials every call fails, and
+# treating that as success reported "stack deleted" for a stack that was still
+# DELETE_IN_PROGRESS, then removed the state file that was the only record of
+# it. "I cannot see it" and "it is gone" have to stay distinct.
+stack_status() {
+    local out
+    if out="$(aws cloudformation describe-stacks --region "${REGION}" \
+                --stack-name "${STACK_NAME}" \
+                --query 'Stacks[0].StackStatus' --output text 2>&1)"; then
+        echo "${out}"
+        return 0
+    fi
+    grep -qiE 'does not exist|ValidationError' <<<"${out}" && { echo ""; return 0; }
+    die "cannot determine the state of stack ${STACK_NAME}:
+  ${out}
+  Nothing was assumed deleted. Refresh your AWS credentials and re-run --delete."
+}
+
 # Returns 0 if the stack is gone, 1 if it is still there.
 # The waiter also exits non-zero when our AWS credentials expire mid-wait, and
 # it cannot tell that apart from a real failure -- deletion carries on
@@ -426,10 +447,22 @@ delete_stack() {
     aws cloudformation wait stack-delete-complete --region "${REGION}" --stack-name "${STACK_NAME}" \
         || info "waiter returned non-zero, re-checking stack state"
 
-    aws cloudformation describe-stacks --region "${REGION}" \
-        --stack-name "${STACK_NAME}" >/dev/null 2>&1 || { info "stack ${STACK_NAME} deleted"; return 0; }
+    local status
+    status="$(stack_status)"
+    [ -z "${status}" ] && { info "stack ${STACK_NAME} deleted"; return 0; }
 
-    info "stack ${STACK_NAME} still present:"
+    # Still deleting: the waiter gave up early (usually expired credentials),
+    # but CloudFormation is making progress. Wait it out instead of declaring
+    # either success or failure.
+    if [ "${status}" = "DELETE_IN_PROGRESS" ]; then
+        info "stack still DELETE_IN_PROGRESS, waiting again"
+        aws cloudformation wait stack-delete-complete --region "${REGION}" \
+            --stack-name "${STACK_NAME}" || true
+        status="$(stack_status)"
+        [ -z "${status}" ] && { info "stack ${STACK_NAME} deleted"; return 0; }
+    fi
+
+    info "stack ${STACK_NAME} still present (${status}):"
     aws cloudformation describe-stack-events --region "${REGION}" \
         --stack-name "${STACK_NAME}" --max-items 5 \
         --query 'StackEvents[?ResourceStatus==`DELETE_FAILED`].[LogicalResourceId,ResourceStatusReason]' \
