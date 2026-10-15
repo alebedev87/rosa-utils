@@ -27,7 +27,7 @@ set -ueo pipefail
 # Per-cluster, created and deleted by this script:
 #   VPC stack (unless --subnets), oidc-config, operator-roles, cluster.
 #
-# Docs: hcp/759945100724-stage/ has the hand-run version of every step here.
+# Docs: hcp/stage/ has the hand-run version of every step here.
 
 STATE_DIR="${ROSA_HCP_STATE_DIR:-${HOME}/.rosa-hcp}"
 
@@ -49,6 +49,13 @@ ADMIN="yes"
 DRY_RUN=""
 WAIT_TIMEOUT="30"
 WAIT_MAX_MIN="45"
+
+# CIDR of the VPC we create ourselves. --machine-cidr has to match the VPC the
+# subnets actually live in, so with --subnets it is looked up instead.
+VPC_CIDR="10.0.0.0/16"
+MACHINE_CIDR=""
+OIDC_ID=""
+VPC_OWNED="no"
 
 usage() {
     cat <<EOF
@@ -118,15 +125,25 @@ preflight() {
         [ -x "$(command -v ${c})" ] || die "${c} not found in PATH"
     done
 
-    rosa whoami >/dev/null 2>&1 || die "not logged in to OCM. Run: rosa login --use-auth-code"
-
+    # AWS before OCM: `rosa whoami` needs working AWS credentials itself, so a
+    # stale profile makes it fail with an OCM-shaped error and sends you off
+    # re-running `rosa login`, which fixes nothing.
     AWS_ACCOUNT="$(aws sts get-caller-identity --query Account --output text)" \
         || die "AWS credentials not usable (AWS_PROFILE=${AWS_PROFILE:-default})"
-    OCM_ORG="$(rosa whoami --output json | jq -r '.["OCM Organization ID"] // empty')"
-    OCM_ENV="$(rosa whoami --output json | jq -r '.["OCM API"] // empty')"
+
+    local who
+    who="$(rosa whoami --output json 2>/dev/null)" \
+        || die "rosa whoami failed. Check AWS_PROFILE, then: rosa login --use-auth-code"
+    OCM_ORG="$(jq -r '.["OCM Organization ID"] // empty' <<<"${who}")"
+    OCM_ENV="$(jq -r '.["OCM API"] // empty' <<<"${who}")"
+    [ -n "${OCM_ORG}" ] || die "could not read the OCM organization from 'rosa whoami'"
 
     info "AWS account ${AWS_ACCOUNT} / OCM org ${OCM_ORG} / ${OCM_ENV}"
-    [ -z "${BILLING_ACCOUNT}" ] && BILLING_ACCOUNT="${AWS_ACCOUNT}"
+
+    # Plain assignment, NOT '[ -z ... ] && ...'. That form is the last statement
+    # of the function and returns 1 whenever --billing-account was given, so
+    # set -e killed the whole script here without printing anything.
+    BILLING_ACCOUNT="${BILLING_ACCOUNT:-${AWS_ACCOUNT}}"
 }
 
 # The step that makes a fresh AWS account usable at all. Must be LINKED=Yes,
@@ -158,6 +175,13 @@ ensure_user_role() {
         info "user-role already linked: ${linked}"
         return
     fi
+    # Same trap as ocm-role: creating on top of an existing unlinked role just
+    # fails on a name clash, so say what is actually wrong.
+    if rosa list user-role 2>/dev/null | awk 'NR>1{exit 0} END{exit 1}'; then
+        rosa list user-role
+        die "a user-role exists but is not LINKED to your OCM account.
+  If it is yours: rosa link user-role --role-arn <arn>"
+    fi
     info "creating and linking user-role (prefix ${ACCOUNT_PREFIX})"
     rosa create user-role --prefix "${ACCOUNT_PREFIX}" --mode auto -y
 }
@@ -181,23 +205,48 @@ ensure_network() {
     if [ -n "${SUBNET_IDS}" ]; then
         info "reusing provided subnets: ${SUBNET_IDS}"
         VPC_OWNED="no"
+        # --machine-cidr must match the VPC the subnets are in. Hardcoding the
+        # 10.0.0.0/16 we use for our own VPC makes cluster create fail against
+        # any other VPC, so derive it.
+        local first vpc
+        first="${SUBNET_IDS%%,*}"
+        vpc="$(aws ec2 describe-subnets --region "${REGION}" --subnet-ids "${first}" \
+                 --query 'Subnets[0].VpcId' --output text)" \
+            || die "cannot describe subnet ${first} in ${REGION}"
+        MACHINE_CIDR="$(aws ec2 describe-vpcs --region "${REGION}" --vpc-ids "${vpc}" \
+                 --query 'Vpcs[0].CidrBlock' --output text)" \
+            || die "cannot describe VPC ${vpc}"
+        info "machine CIDR from ${vpc}: ${MACHINE_CIDR}"
         return
     fi
 
     VPC_OWNED="yes"
-    if aws cloudformation describe-stacks --region "${REGION}" \
-         --stack-name "${STACK_NAME}" >/dev/null 2>&1; then
-        info "reusing existing VPC stack ${STACK_NAME}"
-    else
-        info "creating VPC stack ${STACK_NAME} (this takes ~3-4 min, mostly the NAT gateway)"
-        rosa create network rosa-quickstart-default-vpc \
-            --param "Region=${REGION}" \
-            --param "Name=${STACK_NAME}" \
-            --param "AvailabilityZoneCount=1" \
-            --param "AZ1=${AZ}" \
-            --param "VpcCidr=10.0.0.0/16" \
-            --mode auto -y
-    fi
+    MACHINE_CIDR="${VPC_CIDR}"
+
+    # describe-stacks also succeeds for ROLLBACK_COMPLETE / DELETE_FAILED, and
+    # "reusing" one of those just fails later with an unhelpful missing-subnet
+    # error, so check the status rather than mere existence.
+    local status
+    status="$(aws cloudformation describe-stacks --region "${REGION}" \
+                --stack-name "${STACK_NAME}" \
+                --query 'Stacks[0].StackStatus' --output text 2>/dev/null || true)"
+    case "${status}" in
+        CREATE_COMPLETE|UPDATE_COMPLETE)
+            info "reusing existing VPC stack ${STACK_NAME}" ;;
+        "")
+            info "creating VPC stack ${STACK_NAME} (this takes ~3-4 min, mostly the NAT gateway)"
+            rosa create network rosa-quickstart-default-vpc \
+                --param "Region=${REGION}" \
+                --param "Name=${STACK_NAME}" \
+                --param "AvailabilityZoneCount=1" \
+                --param "AZ1=${AZ}" \
+                --param "VpcCidr=${VPC_CIDR}" \
+                --mode auto -y ;;
+        *)
+            die "stack ${STACK_NAME} is in state ${status} and cannot be used.
+  Remove it first:
+    aws cloudformation delete-stack --region ${REGION} --stack-name ${STACK_NAME}" ;;
+    esac
 
     local public private
     public="$(aws cloudformation describe-stack-resources --region "${REGION}" \
@@ -212,6 +261,7 @@ ensure_network() {
 
     SUBNET_IDS="${public},${private}"
     info "subnets: public=${public} private=${private}"
+    save_state
 }
 
 ensure_oidc_config() {
@@ -223,6 +273,7 @@ ensure_oidc_config() {
     OIDC_ID="${OIDC_ARN##*/}"
     [ -n "${OIDC_ID}" ] || die "could not parse OIDC config id"
     info "oidc-config id: ${OIDC_ID}"
+    save_state
 }
 
 ensure_operator_roles() {
@@ -244,6 +295,10 @@ resolve_version() {
     info "nightly: ${v}"
 }
 
+# Called after every step that creates something deletable, not once at the
+# end: if a later step fails there is otherwise no state file at all, --delete
+# then assumes it does not own the VPC, and a NAT gateway plus six VPC
+# endpoints are left billing in an account nobody looks at again.
 save_state() {
     mkdir -p "${STATE_DIR}"
     cat >"${STATE_FILE}" <<EOF
@@ -257,7 +312,6 @@ SUBNET_IDS="${SUBNET_IDS}"
 STACK_NAME="${STACK_NAME}"
 VPC_OWNED="${VPC_OWNED}"
 EOF
-    info "state saved to ${STATE_FILE}"
 }
 
 create_cluster() {
@@ -274,7 +328,7 @@ create_cluster() {
         --subnet-ids "${SUBNET_IDS}" \
         --region "${REGION}" \
         --billing-account "${BILLING_ACCOUNT}" \
-        --machine-cidr 10.0.0.0/16 \
+        --machine-cidr "${MACHINE_CIDR}" \
         --service-cidr 172.30.0.0/16 \
         --pod-cidr 10.128.0.0/14 \
         --host-prefix 23 \
@@ -305,8 +359,13 @@ wait_ready() {
     local have
     while true; do
         have="$(rosa list machinepools -c "${CLUSTER_NAME}" -o json 2>/dev/null \
-                 | jq -r '[.[].status.current_replicas // 0] | add // 0')"
-        [ "${have}" = "${REPLICAS}" ] && { info "workers ready: ${have}/${REPLICAS}"; break; }
+                 | jq -r '[.[] | .status.current_replicas // .current_replicas // 0] | add // 0')"
+        # Empty when the call failed mid-wait; -ge on "" is a syntax error that
+        # would spam stderr every iteration.
+        [ -n "${have}" ] || have=0
+        # -ge, not =: autoscaling can overshoot and string equality would then
+        # never match, burning the full timeout on a healthy cluster.
+        [ "${have}" -ge "${REPLICAS}" ] && { info "workers ready: ${have}/${REPLICAS}"; break; }
         [ "$(date +%s)" -gt "${deadline}" ] && { info "WARNING: only ${have}/${REPLICAS} workers after ${WAIT_MAX_MIN}m"; break; }
         info "workers ${have}/${REPLICAS}"
         sleep "${WAIT_TIMEOUT}"
@@ -318,7 +377,7 @@ wait_ready() {
 create_admin() {
     [ "${ADMIN}" = "yes" ] || { info "skipping admin creation (--no-admin)"; return; }
     info "creating cluster-admin user"
-    rosa create admin -c "${CLUSTER_NAME}"
+    rosa create admin -c "${CLUSTER_NAME}" -y
 }
 
 summary() {
